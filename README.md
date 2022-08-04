@@ -1,0 +1,229 @@
+# Parm Script
+
+With [dear ImGui](https://github.com/ocornut/imgui), it's quite easy to write one's own inspector already, but keeping the UI up-to-date with its underlaying data structure, tweaking their UI details ... still require some labor.
+
+To solve that, one approach is to use reflection infomation, given a structure, generate UI for each of its field. Unreal, Unity works this way.
+
+Another approach is to define the interface first, then use that infomation to generate the underlaying data structure - Houdini (can) work this way.
+
+I think the second approach haven't got enough attention as it deserves yet, from UI description to data structure have some great advantages:
+
+* The definition of parameter interface is not always identical to reflection infomation, e.g., separators / spacers / labels / groups are UI-only concepts that can make users happier, but hard to represent in structs and metadata.
+* It's easier to transpile to other forms, like raw C++ structure + inspect function, or Unreal UStructs with lots of metadata but no inspector.
+* It's also possible to interpret the UI on the fly, without having to have a solid structure beforehead, so that end users can make their own parameters (like in houdini)
+
+This project was my proof of concept experiment, it works so well that I think it already has some real world value, so I released it here.
+
+
+## A taste of Parm Script
+
+// In fact, it's just Lua
+
+```lua
+parmset 'Hello'
+
+label 'A Little Test:'
+toggle 'x' {label='Enable Group Foo', default=true}
+text 'name' {label='Name', default='Foo\nBar\n!@#$%^&*()_+""', multiline=true}
+group 'foo' {label='Foo', disablewhen='{x}==false'}
+  label 'A Int Value:' {joinnext=true}
+  int 'a' {max=1024, min=1}
+  float 'b' {default=1024, ui='drag', speed=1}
+  color 'color1' {hdr=true, default={1,0,0}}
+  color 'color2' {alpha=false, hsv=true, wheel=true, default={0.3,0.1,0.4,0.5}}
+  int 'c'
+  struct 'X'
+    float 'a'
+    float 'b'
+    double 'c'
+  endstruct 'X'
+endgroup 'foo'
+spacer ''
+spacer ''
+separator ''
+toggle 'y'
+group 'bar' {closed=true, label='BarBarBar'}
+  float2 'pos' {disablewhen='{Points}.empty()'}
+  menu 'mode' {
+    class='Mode', label='Mode',
+    items={'a','b','c'}, default='b',
+    itemlabels={'Apple','Banana','Coffe'},
+    itemvalues={4,8,16} }
+  color 'color3' {default={0.8,0.2,0.2,1.0}, disablewhen='{mode}!={class:mode}::a'}
+endgroup 'bar'
+list 'Points' {class='Point'}
+  float3 "pos" {label="Position"}
+  float3 "N" {label="Normal", default={0,1,0}}
+endlist 'Points'
+```
+
+## The Generator
+
+To generate code from above script:
+
+```lua
+local pe=require('parmexpr')
+local ps=pe(--[[the script here]])
+ps.setUseBuiltinTypes() -- use float[4] to represent float4, and so forth
+-- you can also call ps.typedef('float4', 'Vector4f') or alike if you want
+print('//----------CPP STRUCT-----------')
+print(ps.cppStruct())
+print('//----------IMGUI INSPECTOR----------')
+print(ps.imguiInspector('parms'))
+```
+
+## C++ AOT
+
+Generated C++ structure:
+
+```cpp
+struct Hello {
+  bool x = true; // ui=toggle, default=..., label=Enable Group Foo
+  std::string name = "Foo\nBar\n!@#$%^&*()_+\"\""; // ui=text, label=Name, multiline=true, default=...
+  int a; // min=1, max=1024
+  float b = 1024; // default=..., ui=drag, speed=1
+  float color1[4] = {1.0f, 0.0f, 0.0f, 1.0f}; // default={...}, hdr=true
+  float color2[4] = {0.3f, 0.1f, 0.4f, 0.5f}; // default={...}, alpha=false, hsv=true, wheel=true
+  int c;
+  struct struct_X { // struct
+    float a;
+    float b;
+    double c;
+  };
+  struct_X X; // label=X
+  bool y; // ui=toggle
+  float pos[2]; // disablewhen={Points}.empty()
+  enum class Mode {
+    a=4, // label=Apple
+    b=8, // label=Banana
+    c=16, // label=Coffe
+  };
+  Mode mode = Mode::b; // ui=menu, itemlabels={...}, default=..., items={...}, class=Mode, itemvalues={...}, label=Mode
+  float color3[4] = {0.8f, 0.2f, 0.2f, 1.0f}; // disablewhen={mode}!={class:mode}::a, default={...}
+  struct Point { // list
+    float pos[3]; // label=Position
+    float N[3] = {0.0f, 1.0f, 0.0f}; // default={...}, label=Normal
+  };
+  std::vector<Point> Points; // class=Point
+};
+```
+
+Generated ImGui inspector:
+
+```cpp
+bool ImGuiInspect(Hello &parms, std::unordered_set<std::string>& modified) {
+  modified.clear();
+  ImGui::TextUnformatted("A Little Test:");
+  if(ImGui::Checkbox("Enable Group Foo##x", &(parms.x))) modified.insert("x");
+  if(ImGui::InputTextMultiline("Name##name", &(parms.name)))
+    modified.insert("name");
+  ImGui::BeginDisabled(parms.x==false);
+  if(ImGui::CollapsingHeader("Foo##foo", ImGuiTreeNodeFlags_DefaultOpen)) {
+    ImGui::TextUnformatted("A Int Value:");
+    ImGui::SameLine();
+    if(ImGui::SliderInt("A##a", (&(parms.a)), 1, 1024))
+      modified.insert("a");
+    if(ImGui::DragFloat("B##b", (&(parms.b)), 1.000000f))
+      modified.insert("b");
+    if(ImGui::ColorEdit4("Color1##color1", (parms.color1), ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_AlphaPreviewHalf | ImGuiColorEditFlags_HDR | ImGuiColorEditFlags_DisplayRGB | ImGuiColorEditFlags_Float))
+      modified.insert("color1");
+    if(ImGui::ColorEdit3("Color2##color2", (parms.color2), ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_DisplayHSV | ImGuiColorEditFlags_Uint8 | ImGuiColorEditFlags_PickerHueWheel))
+      modified.insert("color2");
+    if(ImGui::DragInt("C##c", (&(parms.c)), 1.000000f))
+      modified.insert("c");
+    if(ImGui::TreeNodeEx("X##X", ImGuiTreeNodeFlags_Framed)) {
+      if(ImGui::DragFloat("A##a", (&(parms.X.a)), 1.000000f))
+        modified.insert("X/a");
+      if(ImGui::DragFloat("B##b", (&(parms.X.b)), 1.000000f))
+        modified.insert("X/b");
+      if(ImGui::InputDouble("C##c", &(parms.X.c)))
+        modified.insert("X/c");
+      ImGui::TreePop();
+    }
+  }
+  ImGui::EndDisabled();
+  ImGui::Spacing();
+  ImGui::Spacing();
+  ImGui::Separator();
+  if(ImGui::Checkbox("Y##y", &(parms.y))) modified.insert("y");
+  if(ImGui::CollapsingHeader("BarBarBar##bar", 0)) {
+    ImGui::BeginDisabled(parms.Points.empty());
+    if(ImGui::DragFloat2("Pos##pos", (parms.pos), 1.000000f))
+      modified.insert("pos");
+    ImGui::EndDisabled();
+    static const char* mode_labels[]={"Apple", "Banana", "Coffe"};
+    static const Hello::Mode mode_values[]={Hello::Mode::a, Hello::Mode::b, Hello::Mode::c};
+    int current_item_mode = 0;
+    for(; current_item_mode < 3; ++current_item_mode)
+      if (mode_values[current_item_mode]==(parms.mode)) break;
+    if (ImGui::Combo("Mode##mode", &current_item_mode, mode_labels, 3)) {
+      parms.mode = mode_values[current_item_mode];
+      modified.insert("mode");
+    }
+    ImGui::BeginDisabled(parms.mode!=Hello::Mode::a);
+    if(ImGui::ColorEdit4("Color3##color3", (parms.color3), ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_AlphaPreviewHalf | ImGuiColorEditFlags_DisplayRGB | ImGuiColorEditFlags_Uint8))
+      modified.insert("color3");
+    ImGui::EndDisabled();
+  }
+  int listPoints_cnt=static_cast<int>((parms.Points).size());
+  if (ImGui::InputInt("# " "Points##Points", &listPoints_cnt)) {
+    parms.Points.resize(listPoints_cnt);
+    modified.insert("Points");
+  }
+  for(int listPoints_idx=0; listPoints_idx<listPoints_cnt; ++listPoints_idx) {
+    std::string label_with_id_pos = "Position""["+std::to_string(listPoints_idx)+"]##pos";
+    if(ImGui::DragFloat3(label_with_id_pos.c_str(), (parms.Points[listPoints_idx].pos), 1.000000f))
+      modified.insert("Points/pos");
+    std::string label_with_id_N = "Normal""["+std::to_string(listPoints_idx)+"]##N";
+    if(ImGui::DragFloat3(label_with_id_N.c_str(), (parms.Points[listPoints_idx].N), 1.000000f))
+      modified.insert("Points/N");
+    if (listPoints_idx+1<listPoints_cnt) ImGui::Separator();
+  }
+  return !modified.empty();
+}
+```
+
+To use it:
+```cpp
+#include "parms.h"
+
+Hello parms;
+std::unordered_set<std::string> modified;
+if (ImGuiInspect(parms, modified)) {
+    ...
+}
+```
+
+The look:
+
+![screenshot](screenshot.png)
+
+## Runtime API (TODO)
+
+### Lua
+
+```lua
+parms = ps.loadparmscript([[...]])
+parms.updateInspector()
+parms.getDirtyEntries() -- get modified item keys between last doUI()
+
+a        = parms.a
+filename = parms.IO.file
+npoints  = #parms.Points
+pos1     = parms.Points[1].pos
+```
+
+### C++
+
+```cpp
+parms = loadParmScript([[...]])
+parms.updateInspector()
+parms.dirtyEntries() -- get modified item keys between last updateInspector()
+
+parms["a"].asFloat()
+parms["file"].asString()
+parms["doit"].setCallback([](){puts("hello");})
+parms["Points"].size()
+parms["Points"][i]["pos"].asFloat3()
+```
+
