@@ -2,11 +2,11 @@
 
 With [dear ImGui](https://github.com/ocornut/imgui), it's quite easy to write one's own inspector already, but keeping the UI up-to-date with its underlaying data structure, tweaking their UI details ... still require some labor.
 
-To solve that, one approach is to use reflection information, given a structure, and generate UI for each of its fields. Unreal, Unity works this way.
+To solve that, one approach is to use reflection information, given a structure, generate UI for each of its fields. Unreal, Unity works this way.
 
-Another approach is to define the interface first, then use that information to generate the underlying data structure - Houdini (can) works this way.
+Another approach is to define the interface first, then use that information to generate the underlying data structure - Houdini (can) work this way.
 
-I think the second approach hasn't gotten enough attention as it deserves yet, translate UI description to data structure has some great advantages:
+I think the second approach hasn't gotten enough attention as it deserves yet, translating UI description to data structure has some great advantages:
 
 * The definition of parameter interface is not always identical to reflection information, e.g., separators/spacers/labels/groups are UI-only concepts that can make users happier, but are hard to represent in structs and metadata.
 * It's easier to transpile to other forms, like raw C++ structure + inspect function, or Unreal UStructs with lots of metadata but no inspector.
