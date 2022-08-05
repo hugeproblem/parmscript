@@ -2,22 +2,22 @@
 
 With [dear ImGui](https://github.com/ocornut/imgui), it's quite easy to write one's own inspector already, but keeping the UI up-to-date with its underlaying data structure, tweaking their UI details ... still require some labor.
 
-To solve that, one approach is to use reflection infomation, given a structure, generate UI for each of its field. Unreal, Unity works this way.
+To solve that, one approach is to use reflection information, given a structure, and generate UI for each of its fields. Unreal, Unity works this way.
 
-Another approach is to define the interface first, then use that infomation to generate the underlaying data structure - Houdini (can) work this way.
+Another approach is to define the interface first, then use that information to generate the underlying data structure - Houdini (can) works this way.
 
-I think the second approach haven't got enough attention as it deserves yet, from UI description to data structure have some great advantages:
+I think the second approach hasn't gotten enough attention as it deserves yet, translate UI description to data structure has some great advantages:
 
-* The definition of parameter interface is not always identical to reflection infomation, e.g., separators / spacers / labels / groups are UI-only concepts that can make users happier, but hard to represent in structs and metadata.
+* The definition of parameter interface is not always identical to reflection information, e.g., separators/spacers/labels/groups are UI-only concepts that can make users happier, but are hard to represent in structs and metadata.
 * It's easier to transpile to other forms, like raw C++ structure + inspect function, or Unreal UStructs with lots of metadata but no inspector.
-* It's also possible to interpret the UI on the fly, without having to have a solid structure beforehead, so that end users can make their own parameters (like in houdini)
+* It's also possible to interpret the UI on the fly, without having to have a solid structure beforehand, so that end users can make their custom parameters (like in Houdini)
 
-This project was my proof of concept experiment, it works so well that I think it already has some real world value, so I released it here.
-
+This project was my proof of concept experiment, but it works so well that I think it already has some real world value, so I released it here.
 
 ## A taste of Parm Script
 
 // In fact, it's just Lua
+<a id="example-script"></a>
 
 ```lua
 parmset 'Hello'
@@ -72,7 +72,7 @@ print('//----------IMGUI INSPECTOR----------')
 print(ps.imguiInspector('parms'))
 ```
 
-## C++ AOT
+## C++ Compiled
 
 Generated C++ structure:
 
@@ -198,27 +198,60 @@ The look:
 
 ![screenshot](screenshot.png)
 
-## Runtime API (TODO)
+## Specs
+
+### Primitives:
+
+* `parmset 'name'` -- the name of this parm set, also the name of generated C++ struct, should be declared before anything else
+* `label 'text'`
+* `spacer()` or `spacer ''`
+* `separator()` or `separator ''`
+* `text 'name' {meta}` -- a textinput control, and the variable name, label will be `titleize(name)` by default, you can specify `label='Label'` in meta.
+* `int 'name' {meta}` -- a int control, you can specify `ui='drag'` or `ui='slider'` in meta, default UI is `drag`.
+* `float 'name' {meta}`
+* `float2 ...`
+* `float3 ...`
+* `float4 ...`
+* `double ...`
+* `color ...`
+* `toggle ...`
+* `menu 'name' {items={...}, itemlabels={...}}` -- defines a combo box, with items as its items. item names should be valid C++ variable name, as they will be defined as enum fields, for prettier labels, you can specify itemlabels
+* `struct 'name' {meta}` ... `endstruct 'name'` -- defines a struct named `struct_name` and a variable of `name`, the struct named can be changed by specify `class='StructName'` in meta, fields defined between `struct` and `endstruct` are in the struct's scope.
+* `group 'name' {label='Label'}` ... `endgroup 'name'` -- defines a group, but unlike `struct`, the variables in `group` are in the same scope of parent, so you can't define variable of same name even in nested groups.
+* `list 'name' {class='cls'}` -- defines a `std::vector` of `cls`, i.e., `std::vector<cls> name` or `std::vector<list_name> name` if no `class=` meta exists. Fields defined between `list` and `endlist` are the member variables of struct `cls`
+
+### Common Meta Info
+
+* `label` -- no need to explain
+* `default` -- also no need to explain
+* `min`, `max` -- value range for numeric types like int, float, float2, ...
+* `disablewhen` -- expression to mark field or group disabled, you can reference other fields with `{field}` or `{field/subfield}`, to reference class name (when comparing with menu item, which is define as `enum class` in generated code, you may need this), you can use `{class:field}` to reference the class of `field`, e.g., see example [above](#example-script).
+* `joinnext` -- same effect as `ImGui::SameLine()`
+* ...
+* _TODO: document them all_
+
+
+## Runtime Interpreted API (TODO)
 
 ### Lua
 
 ```lua
-parms = ps.loadparmscript([[...]])
+local parms = ps.loadparmscript([[...]])
 parms.updateInspector()
 parms.getDirtyEntries() -- get modified item keys between last doUI()
 
-a        = parms.a
-filename = parms.IO.file
-npoints  = #parms.Points
-pos1     = parms.Points[1].pos
+local a        = parms.a
+local filename = parms.IO.file
+local npoints  = #parms.Points
+local pos1     = parms.Points[1].pos
 ```
 
 ### C++
 
 ```cpp
-parms = loadParmScript([[...]])
+auto parms = loadParmScript(R"$$(...)$$")
 parms.updateInspector()
-parms.dirtyEntries() -- get modified item keys between last updateInspector()
+parms.dirtyEntries() // get modified item keys between last updateInspector()
 
 parms["a"].asFloat()
 parms["file"].asString()
