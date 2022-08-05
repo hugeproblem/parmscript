@@ -78,33 +78,33 @@ Generated C++ structure:
 
 ```cpp
 struct Hello {
-  bool x = true; // ui=toggle, default=..., label=Enable Group Foo
-  std::string name = "Foo\nBar\n!@#$%^&*()_+\"\""; // ui=text, label=Name, multiline=true, default=...
+  bool x = true; // ui="toggle", label="Enable Group Foo"
+  std::string name = "Foo\nBar\n!@#$%^&*()_+\"\""; // ui="text", multiline=true, label="Name"
   int a; // min=1, max=1024
-  float b = 1024; // default=..., ui=drag, speed=1
-  float color1[4] = {1.0f, 0.0f, 0.0f, 1.0f}; // default={...}, hdr=true
-  float color2[4] = {0.3f, 0.1f, 0.4f, 0.5f}; // default={...}, alpha=false, hsv=true, wheel=true
+  float b = 1024; // ui="drag", speed=1
+  float color1[4] = {1.0f, 0.0f, 0.0f, 1.0f}; // hdr=true
+  float color2[4] = {0.3f, 0.1f, 0.4f, 0.5f}; // alpha=false, wheel=true, hsv=true
   int c;
   struct struct_X { // struct
     float a;
     float b;
     double c;
   };
-  struct_X X; // label=X
-  bool y; // ui=toggle
-  float pos[2]; // disablewhen={Points}.empty()
+  struct_X X; // label="X"
+  bool y; // ui="toggle"
+  float pos[2]; // disablewhen="{Points}.empty()"
   enum class Mode {
     a=4, // label=Apple
     b=8, // label=Banana
     c=16, // label=Coffe
   };
-  Mode mode = Mode::b; // ui=menu, itemlabels={...}, default=..., items={...}, class=Mode, itemvalues={...}, label=Mode
-  float color3[4] = {0.8f, 0.2f, 0.2f, 1.0f}; // disablewhen={mode}!={class:mode}::a, default={...}
+  Mode mode = Mode::b; // ui="menu", class="Mode", label="Mode"
+  float color3[4] = {0.8f, 0.2f, 0.2f, 1.0f}; // disablewhen="{mode}!={class:mode}::a"
   struct Point { // list
-    float pos[3]; // label=Position
-    float N[3] = {0.0f, 1.0f, 0.0f}; // default={...}, label=Normal
+    float pos[3]; // label="Position"
+    float N[3] = {0.0f, 1.0f, 0.0f}; // label="Normal"
   };
-  std::vector<Point> Points; // class=Point
+  std::vector<Point> Points; // class="Point"
 };
 ```
 

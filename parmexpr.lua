@@ -297,31 +297,24 @@ local loadParmScript=function(parmscript)
         default = ''
       end
 
-      local comment = ''
+      local comment = {}
       local nmeta = tablelength(v.meta)
       local nthmeta = 1
-      if v.ui or nmeta>0 then
-        comment = ' // '
-      end
       if v.ui then
-        comment = comment .. fmt('ui=%s', v.ui)
-        if v.meta and nmeta>0 then
-          comment = comment .. ', '
-        end
+        table.insert(comment, fmt('ui=%q', v.ui))
       end
       for k,m in pairs(v.meta or {}) do
-        if typeof(m)=='table' then
-          m='{...}'
-        elseif k=='default' then
-          m='...'
+        if typeof(m)=='table' or k=='default' then
+          -- pass
+        else
+          table.insert(comment, fmt('%s=%q', k, m))
         end
-        comment = comment..fmt('%s=%s', k, m)
-        if nthmeta<nmeta then
-          comment = comment..', '
-        end
-        nthmeta = nthmeta+1
       end
-      emitf('%s %s%s%s;%s', type, v.name, arr, default, comment)
+      if #comment>0 then
+        emitf('%s %s%s%s; // %s', type, v.name, arr, default, table.concat(comment, ', '))
+      else
+        emitf('%s %s%s%s;', type, v.name, arr, default)
+      end
       ::bypass_field::
     end
     return code
