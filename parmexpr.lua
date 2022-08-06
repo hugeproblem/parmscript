@@ -22,7 +22,7 @@ local titleize=function(t)
   return string.gsub(t, '%w+', function(w) return w:sub(1,1):upper()..w:sub(2) end)
 end
 local dbgf=function(...)end
-dbgf=function(...)print(fmt(...))end
+--dbgf=function(...)print(fmt(...))end
 
 local loadParmScript=function(parmscript)
   local parmsetname = 'Parms'
@@ -567,6 +567,7 @@ local loadParmScript=function(parmscript)
         typedefs={string='std::string', float2='float[2]', float3='float[3]', color='float[4]'}
       end,
 
+      parmsetName=function() return parmsetname end,
       cppStruct=genCppStruct,
       imguiInspector=genImGuiInspector,
     }
