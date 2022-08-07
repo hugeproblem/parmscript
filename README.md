@@ -59,7 +59,13 @@ endlist 'Points'
 
 ## The Generator
 
-To generate code from above script:
+To generate code from above script, you can call parmbaker from CLI:
+
+```
+$ lua parmbaker.lua tests/hello.lua
+```
+
+or from Lua you can call `cppStruct()` and `imguiInspector()` function:
 
 ```lua
 local pe=require('parmexpr')
