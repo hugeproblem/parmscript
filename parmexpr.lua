@@ -149,6 +149,7 @@ local loadParmScript=function(parmscript)
     double=defineField('double'),
     color=defineField('color'),
     text=defineField('string', 'text'),
+    button=defineField('function','button'),
     menu=makeMenu, -- defineField('int', 'select'),
     combo=defineField('string', 'combo'),
     group=function(name) return enter(name, 'group', true) end,
@@ -228,7 +229,7 @@ local loadParmScript=function(parmscript)
     for _,v in pairs(branch.fields) do
       local type = typedefs[v.type] or v.type
       local arr = type:match('%[%d+%]') or ''
-      type = type:match('[%w:]+')
+      type = type:match('[%w:<>()]+')
       local default = v.meta and v.meta.default
       if v.fields then -- a branch node
         local class = cppClassName(v)
@@ -438,6 +439,12 @@ local loadParmScript=function(parmscript)
       elseif v.ui=='toggle' then
         assert(v.type=='bool')
         emitf('if(ImGui::Checkbox(%s, &(%s))) modified.insert(%q);', label, thisvar, v.path)
+      elseif v.ui=='button' then
+        assert(v.type=='function')
+        emitf('if(ImGui::Button(%s)) {', label)
+        emitf('  if(%s) (%s)();', thisvar, thisvar)
+        emitf('  modified.insert(%q);', v.path)
+        emit ('}')
       elseif numericformat[v.type] then
         local ctl = numericformat[v.type]
         local addr = '&'..thisvar
@@ -564,7 +571,7 @@ local loadParmScript=function(parmscript)
       setTypedefs=function(td) typedefs=td end,
       typedef=function(a,b) typedefs[a]=b end,
       setUseBuiltinTypes=function()
-        typedefs={string='std::string', float2='float[2]', float3='float[3]', color='float[4]'}
+        typedefs={['function']='std::function<void()>', string='std::string', float2='float[2]', float3='float[3]', color='float[4]'}
       end,
 
       parmsetName=function() return parmsetname end,
