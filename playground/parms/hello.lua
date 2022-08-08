@@ -11,6 +11,7 @@ group 'foo' {label='Foo', disablewhen='{x}==false'}
   color 'yellow' {hdr=true, default={1,1,0}}
   color 'green' {hdr=true, default={0,1,0,1}, alpha=false, wheel=true}
   color 'color2' {alpha=false, hsv=true, wheel=true, default={0.3,0.1,0.4,1.0}}
+  button 'sayhi' {label='Say Hi'}
   int 'c'
   struct 'X'
     float 'a'

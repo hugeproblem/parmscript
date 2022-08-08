@@ -1,7 +1,8 @@
 #include <imgui.h>
 #include <imgui_stdlib.h>
-#include "hello.h"
-#include "hello_imgui_inspector.inl"
+#include "parms/hello.h"
+
+#include <iostream>
 
 namespace ImGui {
 
@@ -11,6 +12,7 @@ std::unordered_set<std::string> modified;
 
 void ShowDemoWindow(bool* opened)
 {
+  hello.sayhi=[](){std::cout<<"Hello!"<<std::endl;};
   if (ImGui::Begin("My Demo", opened)) {
     if (ImGuiInspect(hello, modified)) {
       ImGui::Text("Modified Items:");
