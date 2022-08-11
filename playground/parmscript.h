@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cctype>
 #include <functional>
 #include <memory>
@@ -21,8 +22,11 @@ public:
   struct float3 { float x,y,z; };
   struct float4 { float x,y,z,w; };
   struct color  { float r,g,b,a; };
-  using  std::string;
-  using  hashmap=std::unordered_map;
+  using  string=std::string;
+  template <class K, class V>
+  using  hashmap=std::unordered_map<K,V>;
+  template <class T>
+  using  hashset=std::unordered_set<T>;
 
   enum class value_type_enum : size_t {
     NONE,           BOOL, INT, FLOAT, FLOAT2, FLOAT3, FLOAT4, COLOR, STRING};
@@ -32,12 +36,14 @@ public:
     FIELD, LABEL, BUTTON, MENU, GROUP, STRUCT, LIST};
 
 protected:
-  ui_type_enum                ui_type_=ui_type_tag::LABEL;
+  ui_type_enum                ui_type_=ui_type_enum::LABEL;
+  value_type_enum             expected_value_type_;
   value_type                  value_;
   value_type                  default_;
   string                      name_;
+  string                      path_;
   string                      label_;
-  hashmap<stirng, value_type> meta_;
+  hashmap<string, value_type> meta_;
   std::vector<int>            menu_values_;
   std::vector<string>         menu_items_;
   std::vector<string>         menu_labels_;
@@ -69,12 +75,32 @@ protected:
 
 public:
   Parm()=default;
-  Parm(Parm const&)=default;
   Parm(Parm&&)=default;
   ~Parm()=default;
+  Parm(Parm const& that)
+    : ui_type_(that.ui_type_)
+    , value_(that.value_)
+    , default_(that.default_)
+    , name_(that.name_)
+    , path_(that.path_)
+    , label_(that.label_)
+    , meta_(that.meta_)
+    , menu_values_(that.menu_values_)
+    , menu_items_(that.menu_items_)
+    , menu_labels_(that.menu_labels_)
+  {
+    fields_.reserve(that.fields_.size());
+    for (auto f: that.fields_)
+      fields_.push_back(std::make_shared<Parm>(*f));
+    listValues_.reserve(that.listValues_.size());
+    for (auto v: that.listValues_)
+      listValues_.push_back(std::make_shared<Parm>(*v));
+  }
 
   void setName(string name) { name_ = std::move(name); }
+  void setPath(string path) { path_ = std::move(path); }
   void setUI(ui_type_enum type) {ui_type_ = type; }
+  void setType(value_type_enum type) {expected_value_type_ = type;}
   void setAsField(value_type defaultValue) {
     ui_type_ = ui_type_enum::FIELD;
     value_ = defaultValue;
@@ -89,26 +115,49 @@ public:
     default_ = defaultValue;
 
     if (labels.size() == menu_items_.size())
-      menu_labels_ = std::move(menu_labels_);
+      menu_labels_ = std::move(labels);
     else {
       menu_labels_.resize(menu_items_.size());
       std::transform(menu_items_.begin(), menu_items_.end(), menu_labels_.begin(), titleize);
     }
 
     if (values.size() == menu_items_.size())
-      menu_values_ = std::move(menu_values_);
+      menu_values_ = std::move(values);
     else {
       menu_values_.resize(menu_values_.size());
       std::iota(menu_values_.begin(), menu_values_.end(), 0);
     }
   }
+  void setup(string name, string path, string label, ui_type_enum ui, value_type_enum type, value_type defaultValue) {
+    if (defaultValue.index() != static_cast<size_t>(type)) {
+      throw std::invalid_argument("default value does not match type");
+    }
+    name_    = std::move(name);
+    path_    = std::move(path);
+    label_   = std::move(label);
+    ui_type_ = ui;
+    expected_value_type_ = type;
+    default_ = defaultValue;
+    value_   = defaultValue;
+  }
   void addField(ParmPtr child) {
     fields_.push_back(child);
+    if (!listValues_.empty()) {
+      for (auto item: listValues_) {
+        item->fields_.push_back(std::make_shared<Parm>(*child));
+      }
+    }
   }
+  /* TODO: runtime adjusts on fields
+  void removeField(size_t idx) {
+  }
+  */
 
   auto const& name() const { return name_; }
+  auto const& path() const { return path_; }
   auto const& value() const { return value_; }
-  auto const& defaultValue() const { return defaultValue_; }
+  auto const& defaultValue() const { return default_; }
+  auto const  type() const { return expected_value_type_; }
 
   // retrieve value:
   template <class T>
@@ -150,32 +199,48 @@ public:
   void resizeList(size_t cnt) {
     if (auto oldsize=listValues_.size(); oldsize<cnt) {
       for (auto i=oldsize; i<cnt; ++i) {
-        listValues_.push_back(std::make_shared<Parm>())
-        for (auto field : fields_) {
-          listValues_.back()->fields_.push_back(std::make_shared(*field));
+        auto newItem = std::make_shared<Parm>();
+        newItem->setUI(ui_type_enum::STRUCT);
+        newItem->setPath(path_+"["+std::to_string(i)+"]");
+        listValues_.push_back(newItem);
+        for (auto f: fields_) {
+          auto newField = std::make_shared<Parm>(*f);
+          newField->setPath(newItem->path()+"/"+f->name());
+          newItem->fields_.push_back(newField);
         }
       }
     } else {
       listValues_.resize(cnt);
     }
   }
+  template <class T>
+  void setListValue(size_t i, size_t f, T value) {
+    listValues_.at(i)->fields_.at(f)->set(std::move(value));
+  }
+
+  bool updateInspector(hashset<string>& dirty);
 };
 
 
 class ParmSet
 {
 public:
-  using  std::string;
-  using  hashmap=std::unordered_map;
+  using string=std::string;
+  template <class K, class V>
+  using hashmap=std::unordered_map<K,V>;
+  template <class T>
+  using hashset=std::unordered_set<T>;
 
 protected:
-  std::vector<ParmPtr>       parms_;
-  hashmap<string, ParmPtr>   parmlut_;
-  std::unordered_set<string> dirty_;
+  std::vector<ParmPtr>     parms_;
+  hashmap<string, ParmPtr> parmlut_;
+  hashset<string>          dirty_;
 
 public:
   void updateInspector();
   auto const& dirtyEntries() const { return dirty_; }
+  bool loadScript(string const& s);
+  bool transferTo(ParmSet& that); // convert this into that, try best to respect other's existing type & format
 
   ParmPtr get(string const& key) {
     if (auto itr=parmlut_.find(key); itr!=parmlut_.end())

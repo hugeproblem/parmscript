@@ -1,6 +1,7 @@
 #include <imgui.h>
 #include <imgui_stdlib.h>
 #include "parms/hello.h"
+#include "parmscript.h"
 
 #include <iostream>
 
