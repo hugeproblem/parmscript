@@ -13,7 +13,10 @@
 #include <vector>
 
 class Parm;
+class ParmSet;
 using ParmPtr = std::shared_ptr<Parm>;
+
+typedef struct lua_State lua_State;
 
 class Parm
 {
@@ -36,6 +39,7 @@ public:
     FIELD, LABEL, BUTTON, MENU, GROUP, STRUCT, LIST};
 
 protected:
+  ParmSet                    *root_=nullptr;
   ui_type_enum                ui_type_=ui_type_enum::LABEL;
   value_type_enum             expected_value_type_;
   value_type                  value_;
@@ -74,11 +78,12 @@ protected:
   }
 
 public:
-  Parm()=default;
+  Parm(ParmSet* root):root_(root){}
   Parm(Parm&&)=default;
   ~Parm()=default;
   Parm(Parm const& that)
-    : ui_type_(that.ui_type_)
+    : root_(that.root_)
+    , ui_type_(that.ui_type_)
     , value_(that.value_)
     , default_(that.default_)
     , name_(that.name_)
@@ -97,6 +102,76 @@ public:
       listValues_.push_back(std::make_shared<Parm>(*v));
   }
 
+  auto const& name() const { return name_; }
+  auto const& path() const { return path_; }
+  auto const& value() const { return value_; }
+  auto const& defaultValue() const { return default_; }
+  auto const  type() const { return expected_value_type_; }
+
+  // retrieve value:
+  template <class T>
+  auto as() const { return std::get<T>(value_); }
+  template <class T>
+  auto get() const { return std::get_if<T>(value_); }
+
+  auto    numFields() const { return fields_.size(); }
+  ParmPtr getField(size_t i) const {
+    if (i<fields_.size())
+      return fields_[i];
+    return nullptr;
+  }
+
+  // retrieve list item:
+  auto numListValues() const {
+    return listValues_.size();
+  }
+  template <class T>
+  T* getListValue(size_t i, size_t f) {
+    if (i<listValues_.size()) {
+      assert(listValues_[i]);
+      assert(listValues_[i]->fields_.size() == fields_.size());
+      if (f<listValues_[i]->fields_.size()) {
+        assert(listValues_[i]->fields_[f]);
+        return listValues_[i]->fields_[f]->get<T>();
+      }
+    }
+    return nullptr;
+  }
+  
+  // set values:
+  template <class T>
+  void set(T value) {
+    value_ = std::move(value);
+  }
+
+  // set list:
+  void resizeList(size_t cnt) {
+    if (auto oldsize=listValues_.size(); oldsize<cnt) {
+      for (auto i=oldsize; i<cnt; ++i) {
+        auto newItem = std::make_shared<Parm>(root_);
+        newItem->setUI(ui_type_enum::STRUCT);
+        newItem->setPath(path_+"["+std::to_string(i)+"]");
+        listValues_.push_back(newItem);
+        for (auto f: fields_) {
+          auto newField = std::make_shared<Parm>(*f);
+          newField->setPath(newItem->path()+"/"+f->name());
+          newItem->fields_.push_back(newField);
+        }
+      }
+    } else {
+      listValues_.resize(cnt);
+    }
+  }
+  template <class T>
+  void setListValue(size_t i, size_t f, T value) {
+    listValues_.at(i)->fields_.at(f)->set(std::move(value));
+  }
+
+  bool updateInspector(hashset<string>& dirty);
+
+protected:
+  friend class ParmSet;
+  // setup function should only be called by ParmSet
   void setName(string name) { name_ = std::move(name); }
   void setPath(string path) { path_ = std::move(path); }
   void setUI(ui_type_enum type) {ui_type_ = type; }
@@ -152,73 +227,6 @@ public:
   void removeField(size_t idx) {
   }
   */
-
-  auto const& name() const { return name_; }
-  auto const& path() const { return path_; }
-  auto const& value() const { return value_; }
-  auto const& defaultValue() const { return default_; }
-  auto const  type() const { return expected_value_type_; }
-
-  // retrieve value:
-  template <class T>
-  auto as() const { return std::get<T>(value_); }
-  template <class T>
-  auto get() const { return std::get_if<T>(value_); }
-
-  auto    numFields() const { return fields_.size(); }
-  ParmPtr getField(size_t i) const {
-    if (i<fields_.size())
-      return fields_[i];
-    return nullptr;
-  }
-
-  // retrieve list item:
-  auto numListValues() const {
-    return listValues_.size();
-  }
-  template <class T>
-  T* getListValue(size_t i, size_t f) {
-    if (i<listValues_.size()) {
-      assert(listValues_[i]);
-      assert(listValues_[i]->fields_.size() == fields_.size());
-      if (f<listValues_[i]->fields_.size()) {
-        assert(listValues_[i]->fields_[f]);
-        return listValues_[i]->fields_[f]->get<T>();
-      }
-    }
-    return nullptr;
-  }
-
-  // set values:
-  template <class T>
-  void set(T value) {
-    value_ = std::move(value);
-  }
-
-  // set list:
-  void resizeList(size_t cnt) {
-    if (auto oldsize=listValues_.size(); oldsize<cnt) {
-      for (auto i=oldsize; i<cnt; ++i) {
-        auto newItem = std::make_shared<Parm>();
-        newItem->setUI(ui_type_enum::STRUCT);
-        newItem->setPath(path_+"["+std::to_string(i)+"]");
-        listValues_.push_back(newItem);
-        for (auto f: fields_) {
-          auto newField = std::make_shared<Parm>(*f);
-          newField->setPath(newItem->path()+"/"+f->name());
-          newItem->fields_.push_back(newField);
-        }
-      }
-    } else {
-      listValues_.resize(cnt);
-    }
-  }
-  template <class T>
-  void setListValue(size_t i, size_t f, T value) {
-    listValues_.at(i)->fields_.at(f)->set(std::move(value));
-  }
-
-  bool updateInspector(hashset<string>& dirty);
 };
 
 
@@ -235,12 +243,14 @@ protected:
   std::vector<ParmPtr>     parms_;
   hashmap<string, ParmPtr> parmlut_;
   hashset<string>          dirty_;
+  lua_State               *lua_ = nullptr;
 
 public:
   void updateInspector();
   auto const& dirtyEntries() const { return dirty_; }
   bool loadScript(string const& s);
   bool transferTo(ParmSet& that); // convert this into that, try best to respect other's existing type & format
+  auto lua() const { return lua_; }
 
   ParmPtr get(string const& key) {
     if (auto itr=parmlut_.find(key); itr!=parmlut_.end())

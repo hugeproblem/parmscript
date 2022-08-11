@@ -1,6 +1,9 @@
 [submodule "playground/imgui"]
-	path = playground/imgui
+	path = deps/imgui
 	url = https://github.com/ocornut/imgui.git
 [submodule "playground/lua"]
-	path = playground/lua
+	path = deps/lua
 	url = https://github.com/lua/lua.git
+[submodule "deps/sol2"]
+	path = deps/sol2
+	url = https://github.com/ThePhD/sol2.git
