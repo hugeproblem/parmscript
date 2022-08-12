@@ -64,7 +64,8 @@ protected:
   std::vector<ParmPtr>        listValues_;
 
 
-  static string titleize(string s) {
+  static string titleize(string s)
+  {
     bool space = true;
     for (auto& c: s) {
       if (std::isspace(c)) {
@@ -75,6 +76,15 @@ protected:
       }
     }
     return s;
+  }
+
+  template <class T>
+  T getmeta(std::string const& key, T const& defaultval)
+  {
+    if(auto itr=meta_.find(key); itr!=meta_.end())
+      if (std::holds_alternative<T>(itr->second))
+        return std::get<T>(itr->second);
+    return defaultval;
   }
 
 public:
@@ -244,6 +254,8 @@ protected:
   hashmap<string, ParmPtr> parmlut_;
   hashset<string>          dirty_;
   lua_State               *lua_ = nullptr;
+
+  static int processLuaParm(lua_State*);
 
 public:
   void updateInspector();

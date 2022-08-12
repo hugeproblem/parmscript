@@ -2,3 +2,4 @@ tests/*.h
 tests/*.inl
 .xmake/
 build/
+compile_commands.json

@@ -1,4 +1,5 @@
 #include "parmscript.h"
+#include "deps/imgui/imgui.h"
 
 #include <imgui.h>
 #include <imgui_stdlib.h>
@@ -20,13 +21,9 @@ static const char parmexpr_src[] = {
 
 bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
 {
-  string disablewhen = "";
   bool imdirty = false;
-  if (auto di=meta_.find("disablewhen"); di!=meta_.end()) {
-    if (auto *sptr=std::get_if<string>(&di->second)) {
-      disablewhen = *sptr;
-    }
-  }
+
+  string disablewhen = getmeta<string>("disablewhen", "");
   // TODO: expand {/path/to/parm} to its value
   // TODO: expand {menu:/path/to/parm:item} to its value
   // TODO: translate != into ~=, || into or, && into and, ! into not
@@ -44,17 +41,49 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
     }
   } else if (ui_type_ == ui_type_enum::FIELD) {
     switch(expected_value_type_) {
-    case value_type_enum::INT:
+    case value_type_enum::BOOL:
     {
-      int  val=0;
-      int* iptr = std::get_if<int>(&value_);
-      if (iptr)
-        val = *iptr;
-      if (ImGui::DragInt(label_.c_str(), &val)) {
-        value_ = val;
-        modified.insert(path_);
+      bool v = std::get<bool>(value_);
+      if (ImGui::Checkbox(label_.c_str(), &v)) {
+        value_ = v;
         imdirty = true;
       }
+      break;
+    }
+    case value_type_enum::INT:
+    {
+      int v = std::get<int>(value_);
+      string ui = getmeta<string>("ui", "drag");
+      int min = getmeta<int>("min", 0)
+      int max = getmeta<int>("max", 100);
+      int speed = getmeta<int>("speed", 1);
+      if (ui == "drag") {
+        imdirty = ImGui::DragInt(label_.c_str(), &v, speed);
+      } else if (ui == "slider") {
+        imdirty = ImGui::SliderInt(label_.c_str(), &v, min, max);
+      } else {
+        imdirty = ImGui::InputInt(label_.c_str(), &v);
+      }
+      if (imdirty)
+        value_ = v;
+      break;
+    }
+    case value_type_enum::FLOAT:
+    {
+      float v = std::get<float>(value_);
+      string ui = getmeta<string>("ui", "drag");
+      float min = getmeta<float>("min", 0.f)
+      float max = getmeta<float>("max", 1.f);
+      float speed = getmeta<float>("speed", 1.f);
+      if (ui == "drag") {
+        imdirty = ImGui::DragFloat(label_.c_str(), &v, speed);
+      } else if (ui == "slider") {
+        imdirty = ImGui::SliderFloat(label_.c_str(), &v, min, max);
+      } else {
+        imdirty = ImGui::InputFloat(label_.c_str(), &v);
+      }
+      if (imdirty)
+        value_ = v;
       break;
     }
     // TODO: more
@@ -64,8 +93,19 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
   if (!disablewhen.empty()) {
     ImGui::EndDisabled();
   }
+  if (imdirty)
+    modified.insert(path_);
+  if (getmeta<bool>("joinnext", false))
+    ImGui::SameLine();
   return imdirty;
 } 
+
+int ParmSet::processLuaParm(lua_State* lua)
+{
+  sol::state_view L{lua};
+
+  return 0;
+}
 
 bool ParmSet::loadScript(std::string const& s)
 {
@@ -98,7 +138,8 @@ bool ParmSet::loadScript(std::string const& s)
 
   sol::state_view L{lua_};
   try {
-    L.safe_script(R"(for i,v in pairs(parmscript.allParms()) do print(i,v) end)");
+    L.set_function("process", processLuaParm);
+    L.safe_script("process(parmscript.root())");
   } catch(std::exception const& e) {
     WARN("exception: %s\n", e.what());
   }
