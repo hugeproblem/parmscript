@@ -1,5 +1,6 @@
 tests/*.h
 tests/*.inl
 .xmake/
+.cache/
 build/
 compile_commands.json

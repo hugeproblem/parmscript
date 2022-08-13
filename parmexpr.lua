@@ -91,7 +91,7 @@ local loadParmScript=function(parmscript)
     end
     local label=titleize(name)
     name = escape(name)
-    currentbranch = {name=name, type=type, path=path, flat=flat, parent=currentbranch, meta={label=label}, fields={}}
+    currentbranch = {name=name, ui=type, type=type, path=path, flat=flat, parent=currentbranch, meta={label=label}, fields={}}
     if flat then
       parmlut[fullpath(name)] = currentbranch
     else

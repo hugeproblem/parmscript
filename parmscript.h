@@ -32,11 +32,11 @@ public:
   using  hashset=std::unordered_set<T>;
 
   enum class value_type_enum : size_t {
-    NONE,           BOOL, INT, FLOAT, FLOAT2, FLOAT3, FLOAT4, COLOR, STRING};
+    NONE,           BOOL, INT, FLOAT, DOUBLE, FLOAT2, FLOAT3, FLOAT4, COLOR, STRING};
   using value_type = std::variant<
-    std::monostate, bool, int, float, float2, float3, float4, color, string>;
+    std::monostate, bool, int, float, double, float2, float3, float4, color, string>;
   enum class ui_type_enum {
-    FIELD, LABEL, BUTTON, MENU, GROUP, STRUCT, LIST};
+    FIELD, LABEL, BUTTON, SPACER, SEPARATOR, MENU, GROUP, STRUCT, LIST};
 
 protected:
   ParmSet                    *root_=nullptr;
@@ -81,9 +81,13 @@ protected:
   template <class T>
   T getmeta(std::string const& key, T const& defaultval)
   {
-    if(auto itr=meta_.find(key); itr!=meta_.end())
-      if (std::holds_alternative<T>(itr->second))
+    if(auto itr=meta_.find(key); itr!=meta_.end()) {
+      if (std::holds_alternative<T>(itr->second)) {
         return std::get<T>(itr->second);
+      } else {
+        fprintf(stderr, "bad type held in %s: %d\n", key.c_str(), itr->second.index());
+      }
+    }
     return defaultval;
   }
 
@@ -121,8 +125,34 @@ public:
   // retrieve value:
   template <class T>
   auto as() const { return std::get<T>(value_); }
-  template <class T>
-  auto get() const { return std::get_if<T>(value_); }
+
+  // special case for menu:
+  template <>
+  auto as<int>() const {
+    if (ui_type_ == ui_type_enum::MENU) {
+      int idx = std::get<int>(value_);
+      if (menu_values_.size() == menu_items_.size() && idx>=0 && idx<menu_values_.size()) {
+        return menu_values_[idx];
+      } else {
+        return -1;
+      }
+    } else {
+      return std::get<int>(value_);
+    }
+  }
+  template <>
+  auto as<string>() const {
+     if (ui_type_ == ui_type_enum::MENU) {
+      int idx = std::get<int>(value_);
+      if (idx>=0 && idx<menu_items_.size()) {
+        return menu_items_[idx];
+      } else {
+        return string();
+      }
+    } else {
+      return std::get<string>(value_);
+    }   
+  }
 
   auto    numFields() const { return fields_.size(); }
   ParmPtr getField(size_t i) const {
@@ -150,8 +180,12 @@ public:
   
   // set values:
   template <class T>
-  void set(T value) {
-    value_ = std::move(value);
+  bool set(T value) {
+    if (auto* ptr = std::get_if<T>(&value_)) {
+      *ptr = std::move(value);
+      return true;
+    }
+    return false;
   }
 
   // set list:
@@ -173,8 +207,8 @@ public:
     }
   }
   template <class T>
-  void setListValue(size_t i, size_t f, T value) {
-    listValues_.at(i)->fields_.at(f)->set(std::move(value));
+  bool setListValue(size_t i, size_t f, T value) {
+    return listValues_.at(i)->fields_.at(f)->set(std::move(value));
   }
 
   bool updateInspector(hashset<string>& dirty);
@@ -193,6 +227,10 @@ protected:
   }
   void setLabel(string label) { label_ = std::move(label); }
   void setMeta(string const& key, value_type value) { meta_[key] = std::move(value_); }
+  template <class T>
+  void setMeta(string const& key, T const& value) {
+    meta_[key].emplace<T>(value);
+  }
   void setMenu(std::vector<string> items, int defaultValue, std::vector<string> labels={}, std::vector<int> values={}) {
     ui_type_ = ui_type_enum::MENU;
     menu_items_ = std::move(items);
@@ -250,19 +288,22 @@ public:
   using hashset=std::unordered_set<T>;
 
 protected:
+  ParmPtr                  root_;
   std::vector<ParmPtr>     parms_;
   hashmap<string, ParmPtr> parmlut_;
   hashset<string>          dirty_;
+  bool                     loaded_ = false;
   lua_State               *lua_ = nullptr;
 
-  static int processLuaParm(lua_State*);
+  static int processLuaParm(lua_State* lua);
 
 public:
-  void updateInspector();
+  bool updateInspector();
   auto const& dirtyEntries() const { return dirty_; }
   bool loadScript(string const& s);
   bool transferTo(ParmSet& that); // convert this into that, try best to respect other's existing type & format
   auto lua() const { return lua_; }
+  bool loaded() const { return loaded_; }
 
   ParmPtr get(string const& key) {
     if (auto itr=parmlut_.find(key); itr!=parmlut_.end())
