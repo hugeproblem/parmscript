@@ -35,12 +35,12 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
   bool imdirty = false;
   bool displayChildren = true;
 
-  string disablewhen = getmeta<string>("disablewhen", "");
-  // TODO: expand {/path/to/parm} to its value
-  // TODO: expand {menu:/path/to/parm:item} to its value
-  // TODO: translate != into ~=, || into or, && into and, ! into not
-  // TODO: evaluate disablewhen expr in Lua
+  string disablewhen = getMeta<string>("disablewhen", "");
   if (!disablewhen.empty()) {
+    // expand {path.to.parm} to its value
+    // expand {menu:path.to.parm::item} to its value
+    // translate != into ~=, || into or, && into and, ! into not
+    // evaluate disablewhen expr in Lua
     ImGui::BeginDisabled(false);
   }
 
@@ -55,11 +55,12 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
   } else if (ui_type_ == ui_type_enum::LIST) {
     displayChildren = false;
     int numitems = listValues_.size();
-    if (ImGui::InputInt(label_.c_str(), &numitems)) {
+    if (ImGui::InputInt(("# "+label_).c_str(), &numitems)) {
       resizeList(numitems);
+      modified.insert(path_);
+      imdirty = true;
     }
     for (int i=0; i<numitems; ++i) {
-      // TODO: this should be indexed
       for (auto field: listValues_[i]->fields_) {
         imdirty |= field->updateInspector(modified);
       }
@@ -74,6 +75,10 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
       modified.insert(path_);
       // TODO: callback
     }
+  } else if (ui_type_ == ui_type_enum::SPACER) {
+    ImGui::Spacing();
+  } else if (ui_type_ == ui_type_enum::SEPARATOR) {
+    ImGui::Separator();
   } else if (ui_type_ == ui_type_enum::FIELD) {
     switch(expected_value_type_) {
     case value_type_enum::BOOL:
@@ -88,10 +93,10 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
     case value_type_enum::INT:
     {
       int v = std::get<int>(value_);
-      string ui = getmeta<string>("ui", "drag");
-      int min = getmeta<int>("min", 0);
-      int max = getmeta<int>("max", 100);
-      int speed = getmeta<int>("speed", 1);
+      string ui = getMeta<string>("ui", "drag");
+      int min = getMeta<int>("min", 0);
+      int max = getMeta<int>("max", 100);
+      int speed = getMeta<int>("speed", 1);
       if (ui == "drag") {
         imdirty = ImGui::DragInt(label_.c_str(), &v, speed);
       } else if (ui == "slider") {
@@ -106,10 +111,10 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
     case value_type_enum::FLOAT:
     {
       float v = std::get<float>(value_);
-      string ui = getmeta<string>("ui", "drag");
-      float min = getmeta<float>("min", 0.f);
-      float max = getmeta<float>("max", 1.f);
-      float speed = getmeta<float>("speed", 1.f);
+      string ui = getMeta<string>("ui", "drag");
+      float min = getMeta<float>("min", 0.f);
+      float max = getMeta<float>("max", 1.f);
+      float speed = getMeta<float>("speed", 1.f);
       if (ui == "drag") {
         imdirty = ImGui::DragFloat(label_.c_str(), &v, speed);
       } else if (ui == "slider") {
@@ -124,10 +129,10 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
     case value_type_enum::FLOAT2:
     {
       float2 v = std::get<float2>(value_);
-      string ui = getmeta<string>("ui", "drag");
-      float min = getmeta<float>("min", 0.f);
-      float max = getmeta<float>("max", 1.f);
-      float speed = getmeta<float>("speed", 1.f);
+      string ui = getMeta<string>("ui", "drag");
+      float min = getMeta<float>("min", 0.f);
+      float max = getMeta<float>("max", 1.f);
+      float speed = getMeta<float>("speed", 1.f);
       if (ui == "drag") {
         imdirty = ImGui::DragFloat2(label_.c_str(), &v.x, speed);
       } else if (ui == "slider") {
@@ -142,10 +147,10 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
     case value_type_enum::FLOAT3:
     {
       float3 v = std::get<float3>(value_);
-      string ui = getmeta<string>("ui", "drag");
-      float min = getmeta<float>("min", 0.f);
-      float max = getmeta<float>("max", 1.f);
-      float speed = getmeta<float>("speed", 1.f);
+      string ui = getMeta<string>("ui", "drag");
+      float min = getMeta<float>("min", 0.f);
+      float max = getMeta<float>("max", 1.f);
+      float speed = getMeta<float>("speed", 1.f);
       if (ui == "drag") {
         imdirty = ImGui::DragFloat3(label_.c_str(), &v.x, speed);
       } else if (ui == "slider") {
@@ -160,10 +165,10 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
     case value_type_enum::FLOAT4:
     {
       float4 v = std::get<float4>(value_);
-      string ui = getmeta<string>("ui", "drag");
-      float min = getmeta<float>("min", 0.f);
-      float max = getmeta<float>("max", 1.f);
-      float speed = getmeta<float>("speed", 1.f);
+      string ui = getMeta<string>("ui", "drag");
+      float min = getMeta<float>("min", 0.f);
+      float max = getMeta<float>("max", 1.f);
+      float speed = getMeta<float>("speed", 1.f);
       if (ui == "drag") {
         imdirty = ImGui::DragFloat3(label_.c_str(), &v.x, speed);
       } else if (ui == "slider") {
@@ -178,7 +183,7 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
     case value_type_enum::DOUBLE:
     {
       double v = std::get<double>(value_);
-      float speed = getmeta<double>("speed", 1.0);
+      float speed = getMeta<double>("speed", 1.0);
       imdirty = ImGui::InputDouble(label_.c_str(), &v, speed);
       if (imdirty)
         value_ = v;
@@ -189,7 +194,7 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
       string *v = std::get_if<string>(&value_);
       if (!v)
         break;
-      bool multiline = getmeta<bool>("multiline", false);
+      bool multiline = getMeta<bool>("multiline", false);
       if (multiline)
         imdirty = ImGui::InputTextMultiline(label_.c_str(), v);
       else
@@ -199,11 +204,11 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
     case value_type_enum::COLOR:
     {
       color v = std::get<color>(value_);
-      bool alpha = getmeta<bool>("alpha", false);
-      bool hsv = getmeta<bool>("hsv", false);
-      bool hdr = getmeta<bool>("hdr", false);
-      bool wheel = getmeta<bool>("wheel", false);
-      bool picker = getmeta<bool>("picker", false);
+      bool alpha = getMeta<bool>("alpha", false);
+      bool hsv = getMeta<bool>("hsv", false);
+      bool hdr = getMeta<bool>("hdr", false);
+      bool wheel = getMeta<bool>("wheel", false);
+      bool picker = getMeta<bool>("picker", false);
 
       uint32_t flags = 0;
       if (alpha)
@@ -240,6 +245,7 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
       break;
     }
     default:
+      INFO("unknown field %s of type %d\n", name_.c_str(), static_cast<int>(expected_value_type_));
       break;
     }
   } else if (ui_type_ == ui_type_enum::MENU) {
@@ -250,6 +256,8 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
     }
     if (ImGui::Combo(label_.c_str(), std::get_if<int>(&value_), labels.data(), labels.size()))
       imdirty = true;
+  } else {
+    INFO("unknown ui %s of type %d\n", name_.c_str(), static_cast<int>(ui_type_));
   }
 
   if (displayChildren && !fields_.empty()) {
@@ -265,7 +273,7 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
   }
   if (imdirty)
     modified.insert(path_);
-  if (getmeta<bool>("joinnext", false))
+  if (getMeta<bool>("joinnext", false))
     ImGui::SameLine();
   return imdirty;
 } 
@@ -360,6 +368,9 @@ int ParmSet::processLuaParm(lua_State* lua)
     valuetype = Parm::value_type_enum::STRING;
     defaultval.emplace<string>(defaultfield.get_or(string("")));
     boolmeta("multiline");
+  } else if (type=="double") {
+    valuetype = Parm::value_type_enum::DOUBLE;
+    defaultval.emplace<double>(defaultfield.get_or(0.0));
   }
   if (meta["ui"].valid())
     newparm->setMeta<string>("ui", meta["ui"].get<string>());

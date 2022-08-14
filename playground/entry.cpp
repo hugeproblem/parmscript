@@ -36,11 +36,11 @@ group 'bar' {closed=true, label='BarBarBar'}
     items={'a','b','c'}, default='b',
     itemlabels={'Apple','Banana','Coffe'},
     itemvalues={4,8,16} }
-  color 'color3' {default={0.8,0.2,0.2,1.0}, disablewhen='{mode}!={class:mode}::a'}
+  color 'color3' {default={0.8,0.2,0.2,1.0}, disablewhen='{mode}!={menu:mode::a}'}
 endgroup 'bar'
 list 'Points' {class='Point'}
   float3 "pos" {label="Position"}
-  float3 "N" {label="Normal", default={0,1,0}}
+  float3 "N" {label="Normal", default={0,1,0}, min=-1, max=1}
 endlist 'Points'
 )";
 
@@ -72,8 +72,12 @@ void ShowDemoWindow(bool* opened)
   ImGui::End();
 
   if (ImGui::Begin("Dynamic Parms Test", opened)) {
-    if (dynaParms().loaded())
+    if (dynaParms().loaded()) {
       dynaParms().updateInspector();
+      for (auto entry: dynaParms().dirtyEntries()) {
+        printf("modified: %s\n", entry.c_str());
+      }
+    }
   } 
   ImGui::End();
 }

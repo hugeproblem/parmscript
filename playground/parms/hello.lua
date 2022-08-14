@@ -30,7 +30,7 @@ group 'bar' {closed=true, label='BarBarBar'}
     items={'a','b','c'}, default='b',
     itemlabels={'Apple','Banana','Coffe'},
     itemvalues={4,8,16} }
-  color 'color3' {default={0.8,0.2,0.2,1.0}, disablewhen='{mode}!={class:mode}::a'}
+  color 'color3' {default={0.8,0.2,0.2,1.0}, disablewhen='{mode}!={menu:mode::a}'}
 endgroup 'bar'
 list 'Points' {class='Point'}
   float3 "pos" {label="Position"}

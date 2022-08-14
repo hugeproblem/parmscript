@@ -79,7 +79,7 @@ protected:
   }
 
   template <class T>
-  T getmeta(std::string const& key, T const& defaultval)
+  T getMeta(std::string const& key, T const& defaultval)
   {
     if(auto itr=meta_.find(key); itr!=meta_.end()) {
       if (std::holds_alternative<T>(itr->second)) {
@@ -99,6 +99,7 @@ public:
     : root_(that.root_)
     , ui_type_(that.ui_type_)
     , value_(that.value_)
+    , expected_value_type_(that.expected_value_type_)
     , default_(that.default_)
     , name_(that.name_)
     , path_(that.path_)
@@ -117,6 +118,7 @@ public:
   }
 
   auto const& name() const { return name_; }
+  auto const& label() const { return label_; }
   auto const& path() const { return path_; }
   auto const& value() const { return value_; }
   auto const& defaultValue() const { return default_; }
@@ -172,7 +174,7 @@ public:
       assert(listValues_[i]->fields_.size() == fields_.size());
       if (f<listValues_[i]->fields_.size()) {
         assert(listValues_[i]->fields_[f]);
-        return listValues_[i]->fields_[f]->get<T>();
+        return listValues_[i]->fields_[f]->as<T>();
       }
     }
     return nullptr;
@@ -193,12 +195,14 @@ public:
     if (auto oldsize=listValues_.size(); oldsize<cnt) {
       for (auto i=oldsize; i<cnt; ++i) {
         auto newItem = std::make_shared<Parm>(root_);
+        string indexstr = "["+std::to_string(i)+"]";
         newItem->setUI(ui_type_enum::STRUCT);
-        newItem->setPath(path_+"["+std::to_string(i)+"]");
+        newItem->setPath(path_+indexstr);
         listValues_.push_back(newItem);
         for (auto f: fields_) {
           auto newField = std::make_shared<Parm>(*f);
-          newField->setPath(newItem->path()+"/"+f->name());
+          newField->setPath(newItem->path()+"."+f->name());
+          newField->setLabel(newField->label()+indexstr);
           newItem->fields_.push_back(newField);
         }
       }

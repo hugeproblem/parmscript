@@ -62,12 +62,26 @@ local loadParmScript=function(parmscript)
     if path=='' then
       return name
     else
-      return path..'/'..name
+      return path..'.'..name
+    end
+  end
+
+  local defineNonField=function(ui)
+    return function(label)
+      local fullname=fullpath('ui_'..ui)
+      local field={name='ui_only', path=fullname, parent=currentbranch, type=nil, ui=ui}
+      table.insert(currentbranch.fields, field)
+      field.meta = {label = label}
+      return function(meta)
+        meta.label = label
+        field.meta = meta
+      end
     end
   end
 
   local defineField=function(t, ui)
     return function(name)
+      assert(not string.find(name,'[^%w_]'), fmt("name should contain letters, digits and underscores only, got \"%s\".", name))
       local fullname=fullpath(name)
       local field={name=name, path=fullname, parent=currentbranch, type=t, ui=ui}
       table.insert(currentbranch.fields, field)
@@ -84,7 +98,7 @@ local loadParmScript=function(parmscript)
   local enter=function(name, type, flat) -- enters dir, if flat then its fields are defined in the scope of parent
     dbgf('entering %s', name)
     local prevbranch = currentbranch
-    assert(not string.find(name,'/'), "name should not contain '/'")
+    assert(not string.find(name,'[^%w_]'), "name should contain letters, digits and underscores only.")
     if not flat then
       path=fullpath(name)
       assert(not parmlut[path], fmt('%s already exist', path))
@@ -108,11 +122,11 @@ local loadParmScript=function(parmscript)
   local leave=function(name)
     dbgf('leaving %s', name)
     if not currentbranch.flat then
-      local lastslash = string.find(path, '/[^/]+$')
+      local lastdot = string.find(path, '%.[^.]+$')
       local leaf
-      if lastslash then
-        leaf = string.sub(path, lastslash+1)
-        path=string.sub(path, 1, lastslash-1)
+      if lastdot then
+        leaf = string.sub(path, lastdot+1)
+        path=string.sub(path, 1, lastdot-1)
       else
         leaf = path
         path = ''
@@ -124,7 +138,7 @@ local loadParmScript=function(parmscript)
     local popobj=table.remove(objpath)
     assert(popobj.name==name, fmt('enter(%q)/leave(%q) scope name mismatch', popobj.name, name))
     --if not currentbranch.flat then
-    --  dbgf('objpath=%s', table.concat(map(function(t) return t.name end, objpath), ' / '))
+    --  dbgf('objpath=%s', table.concat(map(function(t) return t.name end, objpath), ' . '))
     --  assert(objpath[#objpath]==parmlut[path], fmt('%q mismatch with %q in lut', path, objpath[#objpath].path))
     --end
     currentbranch=objpath[#objpath]
@@ -137,9 +151,9 @@ local loadParmScript=function(parmscript)
 
   local safeenv = {
     parmset=function(name) parmsetname=name end,
-    label=defineField('', 'label'),
-    separator=defineField('','separator'),
-    spacer=defineField('', 'spacer'),
+    label=defineNonField('label'),
+    separator=defineNonField('separator'),
+    spacer=defineNonField('spacer'),
     toggle=defineField('bool', 'toggle'),
     int=defineField('int'),
     float=defineField('float'),
@@ -227,6 +241,10 @@ local loadParmScript=function(parmscript)
       code=code..indentstr..fmt(line,...)..'\n'
     end
     for _,v in pairs(branch.fields) do
+      if not v.type or not v.name then
+        dbgf('skipping %s', v.ui or v.label or v.name)
+        goto bypass_field
+      end
       local type = typedefs[v.type] or v.type
       local arr = type:match('%[%d+%]') or ''
       type = type:match('[%w:<>()]+')
@@ -358,14 +376,17 @@ local loadParmScript=function(parmscript)
       local thisvar = container..'.'..v.name
       local disablewhen = v.meta and v.meta.disablewhen
       if disablewhen then
-        local disableexpr = disablewhen:gsub('{([%w/:]+)}', function(t)
+        local disableexpr = disablewhen:gsub('{([%w_.:]+)}', function(t)
+          dbgf('gsub %s ..', t)
           local decoration=t:match('%w+:')
           if not decoration then
             return cppVarName(rootvar)(t)
-          elseif decoration=='class:' then
-            t = t:sub(7)
+          elseif decoration=='menu:' then
+            t = t:sub(6)
+            local n = t:match('::([%w_]+)')
+            t = t:match('([%w_.]+)::')
             assert(parmlut[t], 'cannot find parm %q', t)
-            return cppClassName(parmlut[t],true)
+            return cppClassName(parmlut[t],true)..'::'..n
           else
             assert(false, fmt('unknown decoration: %q'), decoration)
           end
@@ -524,13 +545,13 @@ local loadParmScript=function(parmscript)
         end
         emitf('  modified.insert(%q);', v.path)
       elseif v.ui=='label' then
-        assert(v.type=='')
-        emitf('ImGui::TextUnformatted(%s);', quoteString(v.name))
+        assert(not v.type or v.type=='')
+        emitf('ImGui::TextUnformatted(%s);', quoteString(v.meta.label))
       elseif v.ui=='separator' then
-        assert(v.type=='')
+        assert(not v.type or v.type=='')
         emit('ImGui::Separator();')
       elseif v.ui=='spacer' then
-        assert(v.type=='')
+        assert(not v.type or v.type=='')
         emit('ImGui::Spacing();')
       else
         emitf('// TODO: unhandled: %s %s', v.type, v.name)
