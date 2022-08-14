@@ -3,4 +3,7 @@ tests/*.inl
 .xmake/
 .cache/
 build/
+vs2017/
+vs2019/
+vs2022/
 compile_commands.json

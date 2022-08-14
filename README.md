@@ -49,7 +49,7 @@ group 'bar' {closed=true, label='BarBarBar'}
     items={'a','b','c'}, default='b',
     itemlabels={'Apple','Banana','Coffe'},
     itemvalues={4,8,16} }
-  color 'color3' {default={0.8,0.2,0.2,1.0}, disablewhen='{mode}!={class:mode}::a'}
+  color 'color3' {default={0.8,0.2,0.2,1.0}, disablewhen='{mode}!={menu:mode::a}'}
 endgroup 'bar'
 list 'Points' {class='Point'}
   float3 "pos" {label="Position"}
@@ -231,7 +231,7 @@ The look:
 * `label` -- no need to explain
 * `default` -- also no need to explain
 * `min`, `max` -- value range for numeric types like int, float, float2, ...
-* `disablewhen` -- expression to mark field or group disabled, you can reference other fields with `{field}` or `{field/subfield}`, to reference class name (when comparing with menu item, which is define as `enum class` in generated code, you may need this), you can use `{class:field}` to reference the class of `field`, e.g., see example [above](#example-script).
+* `disablewhen` -- expression to mark field or group disabled, you can reference other fields with `{field}` or `{field.subfield}`, to reference class name (when comparing with menu item, which is define as `enum class` in generated code, you may need this), you can use `{menu:name::field}` to reference `field` of enum class `name`, e.g., see example [above](#example-script).
 * `joinnext` -- same effect as `ImGui::SameLine()`
 * ...
 * _TODO: document them all_

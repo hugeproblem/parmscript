@@ -1,28 +1,24 @@
 #include "parmscript.h"
-#include "deps/imgui/imgui.h"
-#include "imgui_internal.h"
-#include "sol/forward.hpp"
-#include "sol/stack_core.hpp"
-#include "sol/traits.hpp"
 
 #include <array>
 #include <imgui.h>
 #include <imgui_stdlib.h>
 
 #include <memory>
-#include <objidlbase.h>
-#include <sol/sol.hpp>
-#include <stdint.h>
-#include <winuser.h>
+
 extern "C" {
+#include <stdint.h>
 #include <lua.h>
+#include <lauxlib.h>
 }
+
+#include <sol/sol.hpp>
 
 static const char parmexpr_src[] = {
 #include <parmexpr.lua.h>
 };
 
-#ifdef DEBUG
+#if 1
 #define WARN(...) fprintf(stderr, __VA_ARGS__)
 #define INFO(...) fprintf(stdout, __VA_ARGS__)
 #else
@@ -41,7 +37,37 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
     // expand {menu:path.to.parm::item} to its value
     // translate != into ~=, || into or, && into and, ! into not
     // evaluate disablewhen expr in Lua
-    ImGui::BeginDisabled(false);
+
+    // init the eval function:
+    bool disabled = false;
+    sol::state_view lua(root_->lua());
+    auto loaded = lua.load(R"LUA(
+local ps, evalParm, expr=...
+return expr:gsub('{([^}]+)}', function(expr)
+  local e = evalParm(ps, expr)
+  if e~=nil then
+    return string.format("%q", e)
+  else
+    return '{error}'
+  end
+end):gsub('!=', '~='):gsub('||', ' or '):gsub('&&', ' and '):gsub('!', 'not ')
+    )LUA");
+    if (loaded.valid()) {
+      //sol::stack::push<ParmSet*>(lua, root_);
+      //sol::stack::push(lua, ParmSet::evalParm);
+      string expanded = loaded.call(root_, ParmSet::evalParm, disablewhen);
+      // INFO("disablewhen \"%s\" expanded to \"%s\"\n", disablewhen.c_str(), expanded.c_str());
+      if (expanded.find("{error}") == string::npos) {
+        loaded = lua.load("return "+expanded, "disablewhen", sol::load_mode::text);
+        if (loaded.valid()) {
+          disabled = loaded.call();
+        }
+      }
+    } else {
+      WARN("failed to load disablewhen script");
+    }
+
+    ImGui::BeginDisabled(disabled);
   }
 
   if (ui_type_ == ui_type_enum::GROUP) {
@@ -278,6 +304,47 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
   return imdirty;
 } 
 
+ParmPtr Parm::getField(Parm::string const& relpath) {
+  if (auto dot=relpath.find('.'); dot!=string::npos) {
+    if (auto f=getField(relpath.substr(0, dot)))
+      return f->getField(relpath.substr(dot+1));
+    else
+      return nullptr;
+  } else {
+    string childname = relpath;
+    auto idxstart = relpath.find('[');
+    int idx = -1;
+    if (idxstart!=string::npos) {
+      auto idxend = relpath.find(']');
+      if (idxend==string::npos)
+        return nullptr;
+      string idxstr = relpath.substr(idxstart+1, idxend-idxstart-1);
+      idx = std::stoi(idxstr);
+      childname = relpath.substr(0, idxstart);
+    }
+    if (auto f = std::find_if(fields_.begin(), fields_.end(), [&childname](ParmPtr p){
+        return p->name()==childname;
+      });
+      f!=fields_.end()) {
+      if (idxstart!=string::npos) {
+        if (idx>=0 && idx<(*f)->listValues_.size()) {
+          return (*f)->listValues_[idx];
+        }
+      } else {
+        return *f;
+      }
+    }
+    for (auto f : fields_) {
+      if (f->ui()==ui_type_enum::GROUP) { // group members are in current namespace
+        if (auto gf = f->getField(relpath))
+          return gf;
+      }
+    }
+  }
+  return nullptr;
+}
+
+
 int ParmSet::processLuaParm(lua_State* lua)
 {
   sol::state_view L{lua};
@@ -403,6 +470,61 @@ int ParmSet::processLuaParm(lua_State* lua)
   return 1;
 }
 
+int ParmSet::evalParm(lua_State* lua)
+{
+  sol::state_view L{lua};
+  auto* self = sol::stack::get<ParmSet*>(lua, 1);
+  auto  expr = sol::stack::get<string>(lua, 2);
+  if (expr.find("menu:")==0) {
+    expr = expr.substr(5);
+    auto sep = expr.find("::");
+    if (sep == string::npos)
+      return 0;
+    auto path = expr.substr(0, sep);
+    auto name = expr.substr(sep+2);
+    if (auto parm = self->get(path)) {
+      // just a check
+      if (parm->ui() != Parm::ui_type_enum::MENU)
+        return 0;
+      sol::stack::push<string>(lua, name);
+      return 1;
+    } else {
+      return 0;
+    }
+  }
+
+  if (auto parm = self->get(expr)) {
+    if (parm->ui()==Parm::ui_type_enum::FIELD) {
+      switch (parm->type()) {
+      case Parm::value_type_enum::BOOL: 
+        sol::stack::push<bool>(lua, parm->as<bool>());
+        break;
+      case Parm::value_type_enum::INT:
+        sol::stack::push<int>(lua, parm->as<int>());
+        break;
+      case Parm::value_type_enum::FLOAT:
+        sol::stack::push<float>(lua, parm->as<float>());
+        break;
+      case Parm::value_type_enum::DOUBLE:
+        sol::stack::push<float>(lua, parm->as<double>());
+        break;
+      case Parm::value_type_enum::STRING:
+        sol::stack::push<string>(lua, parm->as<string>());
+        break;
+      default:
+        //WARN("evalParm: type not supported\n");
+        return 0;
+      }
+      return 1;
+    } else if (parm->ui()==Parm::ui_type_enum::MENU) {
+      sol::stack::push<string>(lua, parm->as<string>());
+      return 1;
+    }
+  }
+  //WARN("evalParm: \"%s\" cannot be evaluated\n", expr.c_str());
+  return 0;
+}
+
 bool ParmSet::loadScript(std::string const& s)
 {
   loaded_ = false;
@@ -434,8 +556,6 @@ bool ParmSet::loadScript(std::string const& s)
   }
   root_  = std::make_shared<Parm>(nullptr);
   parms_ = {root_};
-  parmlut_.clear();
-  parmlut_[""] = root_;
 
   sol::state_view L{lua_};
   try {

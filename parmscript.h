@@ -123,6 +123,7 @@ public:
   auto const& value() const { return value_; }
   auto const& defaultValue() const { return default_; }
   auto const  type() const { return expected_value_type_; }
+  auto const  ui() const { return ui_type_; }
 
   // retrieve value:
   template <class T>
@@ -162,6 +163,8 @@ public:
       return fields_[i];
     return nullptr;
   }
+
+  ParmPtr getField(string const& relpath);
 
   // retrieve list item:
   auto numListValues() const {
@@ -294,7 +297,6 @@ public:
 protected:
   ParmPtr                  root_;
   std::vector<ParmPtr>     parms_;
-  hashmap<string, ParmPtr> parmlut_;
   hashset<string>          dirty_;
   bool                     loaded_ = false;
   lua_State               *lua_ = nullptr;
@@ -302,6 +304,8 @@ protected:
   static int processLuaParm(lua_State* lua);
 
 public:
+  static int evalParm(lua_State* lua);
+  
   bool updateInspector();
   auto const& dirtyEntries() const { return dirty_; }
   bool loadScript(string const& s);
@@ -310,12 +314,7 @@ public:
   bool loaded() const { return loaded_; }
 
   ParmPtr get(string const& key) {
-    if (auto itr=parmlut_.find(key); itr!=parmlut_.end())
-      return itr->second;
-    return nullptr;
-  }
-  Parm& operator[](string const& key) {
-    return *parmlut_.at(key);
+    return root_->getField(key);
   }
 };
 
