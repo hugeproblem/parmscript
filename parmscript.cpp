@@ -18,7 +18,7 @@ static const char parmexpr_src[] = {
 #include <parmexpr.lua.h>
 };
 
-#if 1
+#ifdef DEBUG
 #define WARN(...) fprintf(stderr, __VA_ARGS__)
 #define INFO(...) fprintf(stdout, __VA_ARGS__)
 #else
