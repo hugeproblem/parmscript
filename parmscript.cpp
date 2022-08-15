@@ -491,6 +491,15 @@ int ParmSet::evalParm(lua_State* lua)
     } else {
       return 0;
     }
+  } else if (expr.find("length:")==0) {
+    expr = expr.substr(7);
+    if (auto parm = self->get(expr)) {
+      if (parm->ui() == Parm::ui_type_enum::LIST) {
+        sol::stack::push<size_t>(lua, parm->numListValues());
+        return 1;
+      }
+    }
+    return 0;
   }
 
   if (auto parm = self->get(expr)) {

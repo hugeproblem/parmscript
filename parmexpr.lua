@@ -385,8 +385,13 @@ local loadParmScript=function(parmscript)
             t = t:sub(6)
             local n = t:match('::([%w_]+)')
             t = t:match('([%w_.]+)::')
-            assert(parmlut[t], 'cannot find parm %q', t)
+            assert(parmlut[t], fmt('cannot find parm %q', t))
             return cppClassName(parmlut[t],true)..'::'..n
+          elseif decoration=='length:' then
+            t = t:sub(8)
+            assert(parmlut[t], fmt('cannot find parm %q', t))
+            assert(parmlut[t].type == 'list', fmt('%q is not a list', t))
+            return t..'.size()'
           else
             assert(false, fmt('unknown decoration: %q'), decoration)
           end
