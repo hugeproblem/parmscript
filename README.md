@@ -30,7 +30,10 @@ group 'foo' {label='Foo', disablewhen='{x}==false'}
   int 'a' {max=1024, min=1}
   float 'b' {default=1024, ui='drag', speed=1}
   color 'color1' {hdr=true, default={1,0,0}}
-  color 'color2' {alpha=false, hsv=true, wheel=true, default={0.3,0.1,0.4,0.5}}
+  color 'yellow' {hdr=true, default={1,1,0}}
+  color 'green' {hdr=true, default={0,1,0,1}, alpha=false, wheel=true}
+  color 'color2' {alpha=false, hsv=true, wheel=true, default={0.3,0.1,0.4,1.0}}
+  button 'sayhi' {label='Say Hi'}
   int 'c'
   struct 'X'
     float 'a'
@@ -43,7 +46,7 @@ spacer ''
 separator ''
 toggle 'y'
 group 'bar' {closed=true, label='BarBarBar'}
-  float2 'pos' {disablewhen='{length:Points} == 0'}
+  float2 'pos' {disablewhen='{Points}.empty()'}
   menu 'mode' {
     class='Mode', label='Mode',
     items={'a','b','c'}, default='b',
@@ -53,7 +56,7 @@ group 'bar' {closed=true, label='BarBarBar'}
 endgroup 'bar'
 list 'Points' {class='Point'}
   float3 "pos" {label="Position"}
-  float3 "N" {label="Normal", default={0,1,0}}
+  float3 "N" {label="Normal", default={0,1,0}, min=-1, max=1}
 endlist 'Points'
 ```
 
@@ -86,17 +89,20 @@ Generated C++ structure:
 struct Hello {
   bool x = true; // ui="toggle", label="Enable Group Foo"
   std::string name = "Foo\nBar\n!@#$%^&*()_+\"\""; // ui="text", multiline=true, label="Name"
-  int a; // min=1, max=1024
-  float b = 1024; // ui="drag", speed=1
+  int a; // max=1024, min=1
+  float b = 1024; // speed=1, ui="drag"
   float color1[4] = {1.0f, 0.0f, 0.0f, 1.0f}; // hdr=true
-  float color2[4] = {0.3f, 0.1f, 0.4f, 0.5f}; // alpha=false, wheel=true, hsv=true
+  float yellow[4] = {1.0f, 1.0f, 0.0f, 1.0f}; // hdr=true
+  float green[4] = {0.0f, 1.0f, 0.0f, 1.0f}; // hdr=true, wheel=true, alpha=false
+  float color2[4] = {0.3f, 0.1f, 0.4f, 1.0f}; // wheel=true, hsv=true, alpha=false
+  std::function<void()> sayhi; // ui="button", label="Say Hi"
   int c;
   struct struct_X { // struct
     float a;
     float b;
     double c;
   };
-  struct_X X; // label="X"
+  struct_X X; // ui="struct", label="X"
   bool y; // ui="toggle"
   float pos[2]; // disablewhen="{Points}.empty()"
   enum class Mode {
@@ -105,12 +111,12 @@ struct Hello {
     c=16, // label=Coffe
   };
   Mode mode = Mode::b; // ui="menu", class="Mode", label="Mode"
-  float color3[4] = {0.8f, 0.2f, 0.2f, 1.0f}; // disablewhen="{mode}!={class:mode}::a"
+  float color3[4] = {0.8f, 0.2f, 0.2f, 1.0f}; // disablewhen="{mode}!={menu:mode::a}"
   struct Point { // list
     float pos[3]; // label="Position"
-    float N[3] = {0.0f, 1.0f, 0.0f}; // label="Normal"
+    float N[3] = {0.0f, 1.0f, 0.0f}; // max=1, label="Normal", min=-1
   };
-  std::vector<Point> Points; // class="Point"
+  std::vector<Point> Points; // ui="list", class="Point"
 };
 ```
 
@@ -133,17 +139,25 @@ bool ImGuiInspect(Hello &parms, std::unordered_set<std::string>& modified) {
       modified.insert("b");
     if(ImGui::ColorEdit4("Color1##color1", (parms.color1), ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_AlphaPreviewHalf | ImGuiColorEditFlags_HDR | ImGuiColorEditFlags_DisplayRGB | ImGuiColorEditFlags_Float))
       modified.insert("color1");
+    if(ImGui::ColorEdit4("Yellow##yellow", (parms.yellow), ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_AlphaPreviewHalf | ImGuiColorEditFlags_HDR | ImGuiColorEditFlags_DisplayRGB | ImGuiColorEditFlags_Float))
+      modified.insert("yellow");
+    if(ImGui::ColorEdit3("Green##green", (parms.green), ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_HDR | ImGuiColorEditFlags_DisplayRGB | ImGuiColorEditFlags_Float | ImGuiColorEditFlags_PickerHueWheel))
+      modified.insert("green");
     if(ImGui::ColorEdit3("Color2##color2", (parms.color2), ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_DisplayHSV | ImGuiColorEditFlags_Uint8 | ImGuiColorEditFlags_PickerHueWheel))
       modified.insert("color2");
+    if(ImGui::Button("Say Hi##sayhi")) {
+      if(parms.sayhi) (parms.sayhi)();
+      modified.insert("sayhi");
+    }
     if(ImGui::DragInt("C##c", (&(parms.c)), 1.000000f))
       modified.insert("c");
     if(ImGui::TreeNodeEx("X##X", ImGuiTreeNodeFlags_Framed)) {
       if(ImGui::DragFloat("A##a", (&(parms.X.a)), 1.000000f))
-        modified.insert("X/a");
+        modified.insert("X.a");
       if(ImGui::DragFloat("B##b", (&(parms.X.b)), 1.000000f))
-        modified.insert("X/b");
+        modified.insert("X.b");
       if(ImGui::InputDouble("C##c", &(parms.X.c)))
-        modified.insert("X/c");
+        modified.insert("X.c");
       ImGui::TreePop();
     }
   }
@@ -179,10 +193,10 @@ bool ImGuiInspect(Hello &parms, std::unordered_set<std::string>& modified) {
   for(int listPoints_idx=0; listPoints_idx<listPoints_cnt; ++listPoints_idx) {
     std::string label_with_id_pos = "Position""["+std::to_string(listPoints_idx)+"]##pos";
     if(ImGui::DragFloat3(label_with_id_pos.c_str(), (parms.Points[listPoints_idx].pos), 1.000000f))
-      modified.insert("Points/pos");
+      modified.insert("Points.pos");
     std::string label_with_id_N = "Normal""["+std::to_string(listPoints_idx)+"]##N";
-    if(ImGui::DragFloat3(label_with_id_N.c_str(), (parms.Points[listPoints_idx].N), 1.000000f))
-      modified.insert("Points/N");
+    if(ImGui::SliderFloat3(label_with_id_N.c_str(), (parms.Points[listPoints_idx].N), -1.000000, 1.000000))
+      modified.insert("Points.N");
     if (listPoints_idx+1<listPoints_cnt) ImGui::Separator();
   }
   return !modified.empty();

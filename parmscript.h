@@ -218,7 +218,7 @@ public:
     return listValues_.at(i)->fields_.at(f)->set(std::move(value));
   }
 
-  bool updateInspector(hashset<string>& dirty);
+  bool updateInspector(hashset<string>& dirty, lua_State* L = nullptr);
 
 protected:
   friend class ParmSet;
@@ -300,19 +300,19 @@ protected:
   hashset<string>          dirty_;
   bool                     loaded_ = false;
 
-  // TODO: maybe we should share lua state across multiple ParmSet instances
-  lua_State               *lua_ = nullptr;
+  static lua_State *defaultLuaRuntime(); // shared lua runtime for parmscript parsing and `disablewhen` expression evaluation
 
   static int processLuaParm(lua_State* lua);
+  static int evalParm(lua_State* lua);
+
+  friend class Parm;
 
 public:
-  static int evalParm(lua_State* lua);
-  
-  bool updateInspector();
+  bool loadScript(string const& s, lua_State* runtime=nullptr); // if no lua runtime was given, default shared lua runtime will be used
+  bool updateInspector(lua_State* runtime=nullptr);
+
   auto const& dirtyEntries() const { return dirty_; }
-  bool loadScript(string const& s);
   bool transferTo(ParmSet& that); // convert this into that, try best to respect other's existing type & format
-  auto lua() const { return lua_; }
   bool loaded() const { return loaded_; }
 
   ParmPtr get(string const& key) {

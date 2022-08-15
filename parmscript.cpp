@@ -26,7 +26,7 @@ static const char parmexpr_src[] = {
 #define INFO(...) /*nothing*/
 #endif
 
-bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
+bool Parm::updateInspector(Parm::hashset<Parm::string>& modified, lua_State* L)
 {
   bool imdirty = false;
   bool displayChildren = true;
@@ -41,7 +41,10 @@ bool Parm::updateInspector(Parm::hashset<Parm::string>& modified)
 
     // init the eval function:
     bool disabled = false;
-    sol::state_view lua(root_->lua());
+
+    if (L==nullptr)
+      L = root_->defaultLuaRuntime();
+    sol::state_view lua{L};
     auto loaded = lua.load(R"LUA(
 local ps, evalParm, expr=...
 return expr:gsub('{([^}]+)}', function(expr)
@@ -438,11 +441,11 @@ int ParmSet::processLuaParm(lua_State* lua)
   return 1;
 }
 
-int ParmSet::evalParm(lua_State* lua)
+int ParmSet::evalParm(lua_State* L)
 {
-  sol::state_view L{lua};
-  auto* self = sol::stack::get<ParmSet*>(lua, 1);
-  auto  expr = sol::stack::get<string>(lua, 2);
+  sol::state_view lua{L};
+  auto* self = sol::stack::get<ParmSet*>(L, 1);
+  auto  expr = sol::stack::get<string>(L, 2);
   if (expr.find("menu:")==0) {
     expr = expr.substr(5);
     auto sep = expr.find("::");
@@ -454,7 +457,7 @@ int ParmSet::evalParm(lua_State* lua)
       // just a check
       if (parm->ui() != Parm::ui_type_enum::MENU)
         return 0;
-      sol::stack::push<string>(lua, name);
+      sol::stack::push<string>(L, name);
       return 1;
     } else {
       return 0;
@@ -463,7 +466,7 @@ int ParmSet::evalParm(lua_State* lua)
     expr = expr.substr(7);
     if (auto parm = self->get(expr)) {
       if (parm->ui() == Parm::ui_type_enum::LIST) {
-        sol::stack::push<size_t>(lua, parm->numListValues());
+        sol::stack::push<size_t>(L, parm->numListValues());
         return 1;
       }
     }
@@ -474,19 +477,19 @@ int ParmSet::evalParm(lua_State* lua)
     if (parm->ui()==Parm::ui_type_enum::FIELD) {
       switch (parm->type()) {
       case Parm::value_type_enum::BOOL: 
-        sol::stack::push<bool>(lua, parm->as<bool>());
+        sol::stack::push<bool>(L, parm->as<bool>());
         break;
       case Parm::value_type_enum::INT:
-        sol::stack::push<int>(lua, parm->as<int>());
+        sol::stack::push<int>(L, parm->as<int>());
         break;
       case Parm::value_type_enum::FLOAT:
-        sol::stack::push<float>(lua, parm->as<float>());
+        sol::stack::push<float>(L, parm->as<float>());
         break;
       case Parm::value_type_enum::DOUBLE:
-        sol::stack::push<float>(lua, parm->as<double>());
+        sol::stack::push<float>(L, parm->as<double>());
         break;
       case Parm::value_type_enum::STRING:
-        sol::stack::push<string>(lua, parm->as<string>());
+        sol::stack::push<string>(L, parm->as<string>());
         break;
       default:
         WARN("evalParm: type not supported\n");
@@ -494,7 +497,7 @@ int ParmSet::evalParm(lua_State* lua)
       }
       return 1;
     } else if (parm->ui()==Parm::ui_type_enum::MENU) {
-      sol::stack::push<string>(lua, parm->as<string>());
+      sol::stack::push<string>(L, parm->as<string>());
       return 1;
     }
   }
@@ -502,36 +505,30 @@ int ParmSet::evalParm(lua_State* lua)
   return 0;
 }
 
-bool ParmSet::loadScript(std::string const& s)
+bool ParmSet::loadScript(std::string const& s, lua_State* L)
 {
   loaded_ = false;
-  if (lua_) {
-    lua_close(lua_);
-  }
-  lua_ = luaL_newstate();
-  if (!lua_) {
-    return false;
-  }
-  luaL_openlibs(lua_);
-  if (LUA_OK != luaL_loadbufferx(lua_, parmexpr_src, sizeof(parmexpr_src)-1, "parmexpr", "t")) {
+  if (L == nullptr)
+    L = defaultLuaRuntime();
+  if (LUA_OK != luaL_loadbufferx(L, parmexpr_src, sizeof(parmexpr_src)-1, "parmexpr", "t")) {
     WARN("failed to load parmexpr\n");
     return false;
   }
-  if (LUA_OK != lua_pcall(lua_, 0, 1, 0)) {
+  if (LUA_OK != lua_pcall(L, 0, 1, 0)) {
     WARN("failed to call parmexpr\n");
     return false;
   }
-  lua_pushlstring(lua_, s.c_str(), s.size());
-  if (LUA_OK != lua_pcall(lua_, 1, 1, 0)) {
-    WARN("failed to parse parmscript, error: %s\n", luaL_optstring(lua_, -1, "unknown"));
+  lua_pushlstring(L, s.c_str(), s.size());
+  if (LUA_OK != lua_pcall(L, 1, 1, 0)) {
+    WARN("failed to parse parmscript, error: %s\n", luaL_optstring(L, -1, "unknown"));
     return false;
   }
   root_  = std::make_shared<Parm>(nullptr);
   parms_ = {root_};
 
-  sol::state_view L{lua_};
+  sol::state_view lua{L};
   try {
-    auto loaded = L.load(R"LUA(
+    auto loaded = lua.load(R"LUA(
 local parmscript, cpp, process = ...
 local function dofield(cpp, parentid, field)
   local id = process(cpp, parentid, field)
@@ -547,14 +544,14 @@ for _,v in pairs(parmscript.root.fields) do
 end
     )LUA");
     if (loaded.valid()) {
-      lua_pushvalue(lua_, -2); // return value of last `pcall` left on stack, which is the parmscript object
-      sol::stack::push(lua_, this);
-      lua_pushcfunction(lua_, processLuaParm);
-      if (LUA_OK != lua_pcall(lua_, 3, 0, 0)) {
+      lua_pushvalue(L, -2); // return value of last `pcall` left on stack, which is the parmscript object
+      sol::stack::push(L, this);
+      lua_pushcfunction(L, processLuaParm);
+      if (LUA_OK != lua_pcall(L, 3, 0, 0)) {
         WARN("failed to feed parsed parmscript into C++\n");
       } else {
         // done. pop the parmscript object from stack
-        lua_pop(lua_, 1);
+        lua_pop(L, 1);
       }
     } else {
       WARN("failed to load finalizing script\n");
@@ -566,10 +563,32 @@ end
   return true;
 }
 
-bool ParmSet::updateInspector()
+bool ParmSet::updateInspector(lua_State* L)
 {
+  if (L == nullptr)
+    L = defaultLuaRuntime();
   dirty_.clear();
-  root_->updateInspector(dirty_);
+  root_->updateInspector(dirty_, L);
   dirty_.erase(""); // no need to explicitly mark root dirty
   return !dirty_.empty();
+}
+
+lua_State* ParmSet::defaultLuaRuntime()
+{
+  class LuaRAII {
+    lua_State* lua_=nullptr;
+  public:
+    LuaRAII() {
+      lua_ = luaL_newstate();
+      luaL_openlibs(lua_);
+    }
+    ~LuaRAII() {
+      lua_close(lua_);
+    }
+    lua_State* lua() const {
+      return lua_;
+    }
+  };
+  static LuaRAII instance;
+  return instance.lua();
 }
