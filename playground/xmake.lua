@@ -1,4 +1,7 @@
 set_languages('cxx17', 'c11')
+if is_mode("debug") then
+  set_symbols("debug")
+end
 
 rule('parmscript')
   set_extensions('.parm', '.lua')
@@ -47,6 +50,9 @@ target('lua')
 target('parmscript')
   set_kind('static')
   add_includedirs('..', '../deps/imgui', '../deps/imgui/misc/cpp', '../deps/imgui/backends', '../deps/lua', '../deps/sol2/include')
+  if is_mode("debug") then
+    add_defines("DEBUG")
+  end
   add_files('../parmscript.cpp')
   add_files('../parmexpr.lua', {rule='utils.bin2c'})
   add_deps('imgui', 'lua')

@@ -299,6 +299,8 @@ protected:
   std::vector<ParmPtr>     parms_;
   hashset<string>          dirty_;
   bool                     loaded_ = false;
+
+  // TODO: maybe we should share lua state across multiple ParmSet instances
   lua_State               *lua_ = nullptr;
 
   static int processLuaParm(lua_State* lua);

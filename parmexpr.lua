@@ -150,6 +150,9 @@ local loadParmScript=function(parmscript)
   end
 
   local safeenv = {
+    yes = true,
+    no  = false,
+
     parmset=function(name) parmsetname=name end,
     label=defineNonField('label'),
     separator=defineNonField('separator'),
