@@ -43,7 +43,7 @@ spacer ''
 separator ''
 toggle 'y'
 group 'bar' {closed=true, label='BarBarBar'}
-  float2 'pos' {disablewhen='{Points}.empty()'}
+  float2 'pos' {disablewhen='{length:Points} == 0'}
   menu 'mode' {
     class='Mode', label='Mode',
     items={'a','b','c'}, default='b',
