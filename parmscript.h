@@ -15,6 +15,8 @@
 class Parm;
 class ParmSet;
 using ParmPtr = std::shared_ptr<Parm>;
+using ConstParmPtr = std::shared_ptr<const Parm>;
+using ParmSetPtr = std::shared_ptr<ParmSet>;
 
 typedef struct lua_State lua_State;
 
@@ -157,6 +159,20 @@ public:
     }   
   }
 
+  // retrieve value:
+  template <class T>
+  bool is() const { return std::holds_alternative<T>(value_); }
+
+  // special case for menu:
+  template <>
+  bool is<string>() const {
+    if (ui_type_ == ui_type_enum::MENU) {
+      return std::holds_alternative<int>(value_);
+    } else {
+      return std::holds_alternative<string>(value_);
+    }   
+  }
+
   auto    numFields() const { return fields_.size(); }
   ParmPtr getField(size_t i) const {
     if (i<fields_.size())
@@ -171,18 +187,43 @@ public:
     return listValues_.size();
   }
   template <class T>
-  T* getListValue(size_t i, size_t f) {
+  bool getListValue(size_t i, size_t f, T& ret) {
     if (i<listValues_.size()) {
       assert(listValues_[i]);
       assert(listValues_[i]->fields_.size() == fields_.size());
       if (f<listValues_[i]->fields_.size()) {
         assert(listValues_[i]->fields_[f]);
-        return listValues_[i]->fields_[f]->as<T>();
+        if (!listValues_[i]->fields_[f]->is<T>())
+          return false;
+        ret = listValues_[i]->fields_[f]->as<T>();
+        return true;
       }
     }
-    return nullptr;
+    return false;
   }
-  
+  template <class T>
+  bool getListValue(size_t i, string const& f, T& ret) {
+    if (i<listValues_.size()) {
+      assert(listValues_[i]);
+      assert(listValues_[i]->fields_.size() == fields_.size());
+      if (auto field = listValues_[i]->getField(f)) {
+        if (!field->is<T>())
+          return false;
+        ret = field->as<T>();
+        return true;
+      }
+    }
+    return false;
+  } 
+
+  ParmPtr at(size_t idx) {
+    if (ui_type_ != ui_type_enum::LIST)
+      throw std::domain_error("index into none-list parm");
+    if (idx>=listValues_.size())
+      throw std::out_of_range("index out of range");
+    return listValues_[idx];
+  }
+
   // set values:
   template <class T>
   bool set(T value) {
@@ -308,6 +349,17 @@ protected:
   friend class Parm;
 
 public:
+  /// enable lua to call ParmSet functions
+  ///
+  /// example:
+  /// ```lua
+  /// local ParmSet = require('ParmSet')
+  /// local parms = ParmSet.new()
+  /// parms:loadParmScript(...)
+  /// parms:updateInspector()
+  /// ```
+  static void exposeToLua(lua_State* lua);
+
   bool loadScript(string const& s, lua_State* runtime=nullptr); // if no lua runtime was given, default shared lua runtime will be used
   bool updateInspector(lua_State* runtime=nullptr);
 
@@ -318,5 +370,10 @@ public:
   ParmPtr get(string const& key) {
     return root_->getField(key);
   }
+  ConstParmPtr const get(string const& key) const {
+    return std::const_pointer_cast<const Parm>(root_->getField(key));
+  }
+  auto operator[](string const& key) { return get(key); }
+  auto operator[](string const& key) const { return get(key); }
 };
 

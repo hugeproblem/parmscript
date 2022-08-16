@@ -573,6 +573,45 @@ bool ParmSet::updateInspector(lua_State* L)
   return !dirty_.empty();
 }
 
+void ParmSet::exposeToLua(lua_State *L)
+{
+  lua_CFunction luaopen_parmset = [](lua_State *L)->int {
+    sol::state_view lua{L};
+    auto ut = lua.new_usertype<ParmSet>("ParmSet");
+    ut.set("loadScript", [](lua_State *L)->int{
+      auto* self = sol::stack::get<ParmSet*>(L, 1);
+      auto  src  = sol::stack::get<string>(L, 2);
+      sol::stack::push(L, self->loadScript(src, L));
+      return 1;
+    });
+    ut.set("updateInspector", [](lua_State *L)->int{
+      auto* self = sol::stack::get<ParmSet*>(L, 1);
+      sol::stack::push(L, self->updateInspector(L));
+      return 1;
+    });
+    ut.set("dirtyEnteries", [](lua_State *L)->int{
+      auto* self = sol::stack::get<ParmSet*>(L, 1);
+      auto const& dirty = self->dirtyEntries();
+      if (dirty.empty())
+        return 0;
+      lua_createtable(L, dirty.size(), 0);
+      lua_Integer i = 1;
+      for (auto& s: dirty) {
+        lua_pushlstring(L, s.c_str(), s.size());
+        lua_seti(L, -2, i++);
+      }
+      return 1;
+    });
+    ut.set(sol::meta_function::index, evalParm);
+    sol::stack::push(L, ut);
+    return 1;
+  };
+
+  luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_PRELOAD_TABLE);
+  lua_pushcfunction(L, luaopen_parmset);
+  lua_setfield(L, -2, "ParmSet");
+}
+
 lua_State* ParmSet::defaultLuaRuntime()
 {
   class LuaRAII {

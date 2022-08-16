@@ -251,32 +251,32 @@ The look:
 * _TODO: document them all_
 
 
-## Runtime Interpreted API (TODO)
-
-### Lua
-
-```lua
-local parms = ps.loadparmscript([[...]])
-parms.updateInspector()
-parms.getDirtyEntries() -- get modified item keys between last doUI()
-
-local a        = parms.a
-local filename = parms.IO.file
-local npoints  = #parms.Points
-local pos1     = parms.Points[1].pos
-```
+## Runtime Interpreted API
 
 ### C++
 
 ```cpp
-auto parms = loadParmScript(R"$$(...)$$")
-parms.updateInspector()
-parms.dirtyEntries() // get modified item keys between last updateInspector()
+ParmSet parms;
+parms.loadScript(R"$$(...)$$");
+parms.updateInspector();
+parms.dirtyEntries(); // get modified item keys between last updateInspector()
 
-parms["a"].asFloat()
-parms["file"].asString()
-parms["doit"].setCallback([](){puts("hello");})
-parms["Points"].size()
-parms["Points"][i]["pos"].asFloat3()
+parms["a"]->as<float>() // retrieve value
+parms["b"]->is<int>()   // test type
+parms["Points[2].pos"]->as<float3>() // complex path is supported
+parms->get("Points")->at(2)->get("pos")->as<float3>() // equivalent of above expr
 ```
 
+### Lua
+
+```lua
+local ParmSet = require('ParmSet')
+local parms = ParmSet.new()
+parms:loadScript([[...]])
+parms:updateInspector()
+parms:dirtyEntries() -- get modified item keys between last updateInspector()
+
+local a = parms["a"]
+local b = type(parms["b"])
+local p = parms["Points[2].pos"]
+```

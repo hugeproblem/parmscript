@@ -2,7 +2,12 @@
 #include <imgui_stdlib.h>
 #include "parms/hello.h"
 #include "parmscript.h"
-
+extern "C" {
+// Only for Lua API test
+#include <lua.h>
+#include <lualib.h>
+#include <lauxlib.h>
+}
 #include <iostream>
 
 static std::string const testscript = R"(
@@ -44,6 +49,12 @@ list 'Points' {class='Point'}
 endlist 'Points'
 )";
 
+static std::string luaapitest_src = R"(
+local ParmSet = require('ParmSet')
+parms = ParmSet.new()
+parms:loadScript("button 'x'")
+)";
+
 namespace ImGui {
 
 Hello hello;
@@ -62,6 +73,22 @@ void ShowDemoWindow(bool* opened)
     hello.name = testscript;
     hello.x = dynaParms().loadScript(testscript);
   };
+  hello.test_lua=[](){
+    lua_State* L = luaL_newstate();
+    luaL_openlibs(L);
+    ParmSet::exposeToLua(L);
+    if (LUA_OK!=luaL_loadbufferx(L, luaapitest_src.c_str(), luaapitest_src.size(), "test", "t")) {
+      hello.name = "Cannot load API test script";
+      return;
+    }
+    if (LUA_OK!=lua_pcall(L, 0, 0, 0)) {
+      hello.name = "Cannot execute API test script:\n";
+      hello.name += luaL_optlstring(L, -1, "uknown", 0);
+      return;
+    }
+    hello.name = "everything OK!";
+    lua_close(L);
+  };
   if (ImGui::Begin("My Demo", opened)) {
     if (ImGuiInspect(hello, modified)) {
       ImGui::Text("Modified Items:");
@@ -76,6 +103,21 @@ void ShowDemoWindow(bool* opened)
       dynaParms().updateInspector();
       for (auto entry: dynaParms().dirtyEntries()) {
         printf("modified: %s\n", entry.c_str());
+        if (auto parm=dynaParms().get(entry)) {
+          if (parm->is<std::string>())
+            printf("%s = %s\n", entry.c_str(), parm->as<std::string>().c_str());
+          else if (parm->is<int>())
+            printf("%s = %d\n", entry.c_str(), parm->as<int>());
+          else if (parm->is<float>())
+            printf("%s = %f\n", entry.c_str(), parm->as<float>());
+          else if (parm->is<Parm::float2>()) {
+            auto p = parm->as<Parm::float2>();
+            printf("%s = %f, %f\n", entry.c_str(), p.x, p.y);
+          } else if (parm->is<Parm::float3>()) {
+            auto p = parm->as<Parm::float3>();
+            printf("%s = %f, %f, %f\n", entry.c_str(), p.x, p.y, p.z);
+          }
+        }
       }
     }
   } 

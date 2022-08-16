@@ -36,3 +36,4 @@ list 'Points' {class='Point'}
   float3 "pos" {label="Position"}
   float3 "N" {label="Normal", default={0,1,0}, min=-1, max=1}
 endlist 'Points'
+button 'test_lua' {label='Test Lua API'}
