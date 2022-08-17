@@ -52,7 +52,9 @@ endlist 'Points'
 static std::string luaapitest_src = R"(
 local ParmSet = require('ParmSet')
 parms = ParmSet.new()
-parms:loadScript("button 'x'")
+parms:loadScript("button 'buttttton' int 'iiiii' { default=2 }")
+parms:updateInspector()
+assert(parms['iiiii']==2)
 )";
 
 namespace ImGui {

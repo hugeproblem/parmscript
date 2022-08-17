@@ -444,8 +444,14 @@ int ParmSet::processLuaParm(lua_State* lua)
 int ParmSet::evalParm(lua_State* L)
 {
   sol::state_view lua{L};
-  auto* self = sol::stack::get<ParmSet*>(L, 1);
-  auto  expr = sol::stack::get<string>(L, 2);
+  auto optself = sol::stack::check_get<ParmSet*>(L, 1);
+  auto optexpr = sol::stack::check_get<string>(L, 2);
+  if (!optself.has_value() || !optexpr.has_value()) {
+    return luaL_error(L, "wrong arguments passed to ParmSet:evalParm, expected (ParmSet, string)");
+  }
+  auto* self = optself.value();
+  auto& expr = optexpr.value();
+
   if (expr.find("menu:")==0) {
     expr = expr.substr(5);
     auto sep = expr.find("::");
@@ -579,19 +585,34 @@ void ParmSet::exposeToLua(lua_State *L)
     sol::state_view lua{L};
     auto ut = lua.new_usertype<ParmSet>("ParmSet");
     ut.set("loadScript", [](lua_State *L)->int{
-      auto* self = sol::stack::get<ParmSet*>(L, 1);
-      auto  src  = sol::stack::get<string>(L, 2);
-      sol::stack::push(L, self->loadScript(src, L));
+      auto optself = sol::stack::check_get<ParmSet*>(L, 1);
+      auto optsrc  = sol::stack::check_get<string>(L, 2);
+      if (!optself.has_value() || !optsrc.has_value()) {
+        return luaL_error(L, "wrong arguments passed to ParmSet:loadScript, expected (ParmSet, string)");
+      }
+      if (lua_gettop(L)>2) {
+        WARN("extra arguments passed to ParmSet:loadScript are discarded\n");
+      }
+      sol::stack::push(L, optself.value()->loadScript(optsrc.value(), L));
       return 1;
     });
     ut.set("updateInspector", [](lua_State *L)->int{
-      auto* self = sol::stack::get<ParmSet*>(L, 1);
-      sol::stack::push(L, self->updateInspector(L));
+      auto optself = sol::stack::check_get<ParmSet*>(L, 1);
+      if (!optself.has_value()) {
+        return luaL_error(L, "wrong arguments passed to ParmSet:loadScript, expected (ParmSet)");
+      }
+      if (lua_gettop(L)>1) {
+        WARN("extra arguments passed to ParmSet:updateInspector are discarded\n");
+      }
+      sol::stack::push(L, optself.value()->updateInspector(L));
       return 1;
     });
-    ut.set("dirtyEnteries", [](lua_State *L)->int{
-      auto* self = sol::stack::get<ParmSet*>(L, 1);
-      auto const& dirty = self->dirtyEntries();
+    ut.set("dirtyEntries", [](lua_State *L)->int{
+      auto optself = sol::stack::check_get<ParmSet*>(L, 1);
+      if (!optself.has_value()) {
+        return luaL_error(L, "wrong arguments passed to ParmSet:dirtyEntries, expected (ParmSet)");
+      }
+      auto const& dirty = optself.value()->dirtyEntries();
       if (dirty.empty())
         return 0;
       lua_createtable(L, dirty.size(), 0);
