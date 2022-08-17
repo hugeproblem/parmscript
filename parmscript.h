@@ -344,6 +344,7 @@ protected:
   static lua_State *defaultLuaRuntime(); // shared lua runtime for parmscript parsing and `disablewhen` expression evaluation
 
   static int processLuaParm(lua_State* lua);
+  static int pushParmValueToLuaStack(lua_State* L, ParmPtr parm);
   static int evalParm(lua_State* lua);
 
   friend class Parm;
@@ -368,6 +369,7 @@ public:
   bool loaded() const { return loaded_; }
 
   ParmPtr get(string const& key) {
+    if (key=="") return root_;
     return root_->getField(key);
   }
   ConstParmPtr const get(string const& key) const {

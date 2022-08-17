@@ -441,6 +441,74 @@ int ParmSet::processLuaParm(lua_State* lua)
   return 1;
 }
 
+int ParmSet::pushParmValueToLuaStack(lua_State* L, ParmPtr parm)
+{
+  if (parm->ui()==Parm::ui_type_enum::FIELD) {
+    switch (parm->type()) {
+    case Parm::value_type_enum::BOOL: 
+      sol::stack::push<bool>(L, parm->as<bool>());
+      break;
+    case Parm::value_type_enum::INT:
+      sol::stack::push<int>(L, parm->as<int>());
+      break;
+    case Parm::value_type_enum::FLOAT:
+      sol::stack::push<float>(L, parm->as<float>());
+      break;
+    case Parm::value_type_enum::DOUBLE:
+      sol::stack::push<float>(L, parm->as<double>());
+      break;
+    case Parm::value_type_enum::STRING:
+      sol::stack::push<string>(L, parm->as<string>());
+      break;
+    case Parm::value_type_enum::COLOR: {
+      auto c = parm->as<Parm::color>();
+      sol::stack::push(L, std::array<float, 4>{c.r, c.g, c.b, c.a});
+      break;
+    }
+    case Parm::value_type_enum::FLOAT2: {
+      auto v = parm->as<Parm::float2>();
+      sol::stack::push(L, std::array<float, 2>{v.x, v.y});
+      break;
+    }
+    case Parm::value_type_enum::FLOAT3: {
+      auto v = parm->as<Parm::float3>();
+      sol::stack::push(L, std::array<float, 3>{v.x, v.y, v.z});
+      break;
+    }
+    case Parm::value_type_enum::FLOAT4: {
+      auto v = parm->as<Parm::float4>();
+      sol::stack::push(L, std::array<float, 4>{v.x, v.y, v.z, v.w});
+      break;
+    }
+    default:
+      WARN("evalParm: type not supported\n");
+      return 0;
+    }
+    return 1;
+  } else if (parm->ui()==Parm::ui_type_enum::MENU) {
+    sol::stack::push<string>(L, parm->as<string>());
+    return 1;
+  } else if (parm->ui()==Parm::ui_type_enum::STRUCT) {
+    lua_createtable(L, 0, parm->numFields());
+    for (int f=0, nf=parm->numFields(); f<nf; ++f) {
+      if (pushParmValueToLuaStack(L, parm->fields_[f]) == 0)
+        lua_pushnil(L);
+      lua_setfield(L, -2, parm->fields_[f]->name().c_str());
+    }
+    return 1;
+  } else if (parm->ui()==Parm::ui_type_enum::LIST) {
+    lua_createtable(L, parm->numListValues(), 0);
+    for (int i=0, n=parm->numListValues(); i<n; ++i) {
+      pushParmValueToLuaStack(L, parm->listValues_[i]);
+      lua_seti(L, -2, i+1);
+    }
+    return 1;
+  } else {
+    WARN("don\'t known how to handle parm \"%s\" of type %d\n", parm->name().c_str(), static_cast<int>(parm->ui()));
+  }
+  return 0;
+}
+
 int ParmSet::evalParm(lua_State* L)
 {
   sol::state_view lua{L};
@@ -480,32 +548,7 @@ int ParmSet::evalParm(lua_State* L)
   }
 
   if (auto parm = self->get(expr)) {
-    if (parm->ui()==Parm::ui_type_enum::FIELD) {
-      switch (parm->type()) {
-      case Parm::value_type_enum::BOOL: 
-        sol::stack::push<bool>(L, parm->as<bool>());
-        break;
-      case Parm::value_type_enum::INT:
-        sol::stack::push<int>(L, parm->as<int>());
-        break;
-      case Parm::value_type_enum::FLOAT:
-        sol::stack::push<float>(L, parm->as<float>());
-        break;
-      case Parm::value_type_enum::DOUBLE:
-        sol::stack::push<float>(L, parm->as<double>());
-        break;
-      case Parm::value_type_enum::STRING:
-        sol::stack::push<string>(L, parm->as<string>());
-        break;
-      default:
-        WARN("evalParm: type not supported\n");
-        return 0;
-      }
-      return 1;
-    } else if (parm->ui()==Parm::ui_type_enum::MENU) {
-      sol::stack::push<string>(L, parm->as<string>());
-      return 1;
-    }
+    return pushParmValueToLuaStack(L, parm);
   }
   WARN("evalParm: \"%s\" cannot be evaluated\n", expr.c_str());
   return 0;
@@ -530,6 +573,7 @@ bool ParmSet::loadScript(std::string const& s, lua_State* L)
     return false;
   }
   root_  = std::make_shared<Parm>(nullptr);
+  root_->setUI(Parm::ui_type_enum::STRUCT);
   parms_ = {root_};
 
   sol::state_view lua{L};
@@ -574,8 +618,10 @@ bool ParmSet::updateInspector(lua_State* L)
   if (L == nullptr)
     L = defaultLuaRuntime();
   dirty_.clear();
-  root_->updateInspector(dirty_, L);
-  dirty_.erase(""); // no need to explicitly mark root dirty
+  //root_->updateInspector(dirty_, L);
+  //dirty_.erase(""); // no need to explicitly mark root dirty
+  for (auto child: root_->fields_)
+    child->updateInspector(dirty_);
   return !dirty_.empty();
 }
 

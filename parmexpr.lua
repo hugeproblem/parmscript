@@ -32,7 +32,7 @@ local loadParmScript=function(parmscript)
   each parm can be a leaf (field)
   or a branch (group or list)
   ]]
-  local root = {name='', path='', type='root', fields={}}
+  local root = {name='', path='', type='struct', fields={}}
   local parmlut = {['']=root}
   local currentbranch = root -- root
   local path = '' -- `pwd` equivalent for current parm
