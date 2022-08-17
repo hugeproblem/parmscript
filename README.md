@@ -60,6 +60,10 @@ list 'Points' {class='Point'}
 endlist 'Points'
 ```
 
+## The look:
+
+![screenshot](screenshot.png)
+
 ## The Generator
 
 To generate code from above script, you can call parmbaker from CLI:
@@ -214,9 +218,35 @@ if (ImGuiInspect(parms, modified)) {
 }
 ```
 
-The look:
+## Runtime Interpreted API
 
-![screenshot](screenshot.png)
+### C++
+
+```cpp
+ParmSet parms;
+parms.loadScript(R"$$(...)$$");
+parms.updateInspector();
+parms.dirtyEntries(); // get modified item keys between last updateInspector()
+
+parms["a"]->as<float>() // retrieve value
+parms["b"]->is<int>()   // test type
+parms["Points[2].pos"]->as<float3>() // complex path is supported
+parms->get("Points")->at(2)->get("pos")->as<float3>() // equivalent of above expr
+```
+
+### Lua
+
+```lua
+local ParmSet = require('ParmSet')
+local parms = ParmSet.new()
+parms:loadScript([[...]])
+parms:updateInspector()
+parms:dirtyEntries() -- get modified item keys between last updateInspector()
+
+local a = parms["a"]
+local b = type(parms["b"])
+local p = parms["Points[2].pos"]
+```
 
 ## Specs
 
@@ -251,32 +281,3 @@ The look:
 * _TODO: document them all_
 
 
-## Runtime Interpreted API
-
-### C++
-
-```cpp
-ParmSet parms;
-parms.loadScript(R"$$(...)$$");
-parms.updateInspector();
-parms.dirtyEntries(); // get modified item keys between last updateInspector()
-
-parms["a"]->as<float>() // retrieve value
-parms["b"]->is<int>()   // test type
-parms["Points[2].pos"]->as<float3>() // complex path is supported
-parms->get("Points")->at(2)->get("pos")->as<float3>() // equivalent of above expr
-```
-
-### Lua
-
-```lua
-local ParmSet = require('ParmSet')
-local parms = ParmSet.new()
-parms:loadScript([[...]])
-parms:updateInspector()
-parms:dirtyEntries() -- get modified item keys between last updateInspector()
-
-local a = parms["a"]
-local b = type(parms["b"])
-local p = parms["Points[2].pos"]
-```
