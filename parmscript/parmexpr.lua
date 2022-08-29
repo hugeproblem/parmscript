@@ -396,7 +396,7 @@ local loadParmScript=function(parmscript)
             assert(parmlut[t].type == 'list', fmt('%q is not a list', t))
             return t..'.size()'
           else
-            assert(false, fmt('unknown decoration: %q'), decoration)
+            assert(false, fmt('unknown decoration: %q', decoration))
           end
         end)
         emitf('ImGui::BeginDisabled(%s);', disableexpr)

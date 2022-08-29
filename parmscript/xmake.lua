@@ -5,30 +5,30 @@ end
 
 target('imgui')
   set_kind('static')
-  add_includedirs('deps/imgui')
-  add_files('deps/imgui/*.cpp|imgui_demo.cpp', 'deps/imgui/misc/cpp/*.cpp')
+  add_includedirs('../deps/imgui')
+  add_files('../deps/imgui/*.cpp|imgui_demo.cpp', '../deps/imgui/misc/cpp/*.cpp')
 
 target('lua')
   set_kind('static')
-  add_includedirs('deps/lua')
-  add_files('deps/lua/*.c|lua.c|luac.c|onelua.c')
+  add_includedirs('../deps/lua')
+  add_files('../deps/lua/*.c|lua.c|luac.c|onelua.c')
 
 target('luaexe')
   set_basename('lua54')
   set_kind('binary')
-  add_includedirs('deps/lua')
-  add_files('deps/lua/lua.c')
+  add_includedirs('../deps/lua')
+  add_files('../deps/lua/lua.c')
   add_deps('lua')
 
 target('parmscript')
   set_kind('static')
-  add_includedirs('.', 'deps/imgui', 'deps/imgui/misc/cpp', 'deps/imgui/backends', 'deps/lua', 'deps/sol2/include')
+  add_includedirs('.', '../deps/imgui', '../deps/imgui/misc/cpp', '../deps/imgui/backends', '../deps/lua', '../deps/sol2/include')
   if is_mode("debug") then
     add_defines("DEBUG")
   end
   add_files('parmscript.cpp')
   add_files('parmexpr.lua', {rule='utils.bin2c'})
-  add_deps('imgui', 'lua')
+  add_deps('imgui', 'lua', 'luaexe')
 
 rule('parmscript')
   set_extensions('.parm', '.lua')
@@ -54,7 +54,7 @@ rule('parmscript')
                   path.join(os.scriptdir(), 'parmbaker.lua'),
                   '-H', path(headerpath), '-I', path(implpath), '--cpp',
                   os.projectdir()..'/'..path(srcfile)}
-    batchcmds:vrunv(path.join(os.scriptdir(), project.target('luaexe'):targetfile()), args)
+    batchcmds:vrunv(project.target('luaexe'):targetfile(), args)
 
     local objfile=target:objectfile(implpath)
     table.insert(target:objectfiles(), objfile)

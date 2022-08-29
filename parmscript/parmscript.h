@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cctype>
 #include <functional>
 #include <memory>
@@ -129,11 +130,13 @@ public:
 
   // retrieve value:
   template <class T>
-  auto as() const { return std::get<T>(value_); }
+  std::enable_if_t<!std::is_same_v<T, int> && !std::is_same_v<T, string>, T>
+  as() const { return std::get<T>(value_); }
 
   // special case for menu:
-  template <>
-  auto as<int>() const {
+  template <class T>
+  std::enable_if_t<std::is_same_v<T, int>, T>
+  as() const {
     if (ui_type_ == ui_type_enum::MENU) {
       int idx = std::get<int>(value_);
       if (menu_values_.size() == menu_items_.size() && idx>=0 && idx<menu_values_.size()) {
@@ -145,8 +148,9 @@ public:
       return std::get<int>(value_);
     }
   }
-  template <>
-  auto as<string>() const {
+  template <class T>
+  std::enable_if_t<std::is_same_v<T, string>, T>
+  as() const {
      if (ui_type_ == ui_type_enum::MENU) {
       int idx = std::get<int>(value_);
       if (idx>=0 && idx<menu_items_.size()) {
@@ -161,11 +165,13 @@ public:
 
   // retrieve value:
   template <class T>
-  bool is() const { return std::holds_alternative<T>(value_); }
+  std::enable_if_t<!std::is_same_v<T, string>, bool>
+  is() const { return std::holds_alternative<T>(value_); }
 
   // special case for menu:
-  template <>
-  bool is<string>() const {
+  template <class T>
+  std::enable_if_t<std::is_same_v<T, string>, bool>
+  is() const {
     if (ui_type_ == ui_type_enum::MENU) {
       return std::holds_alternative<int>(value_);
     } else {
