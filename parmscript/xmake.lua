@@ -28,7 +28,7 @@ target('parmscript')
   end
   add_files('parmscript.cpp')
   add_files('parmexpr.lua', {rule='utils.bin2c'})
-  add_deps('imgui', 'lua', 'luaexe')
+  add_deps('imgui', 'lua')
 
 rule('parmscript')
   set_extensions('.parm', '.lua')
@@ -37,6 +37,7 @@ rule('parmscript')
     if not os.isdir(outdir) then
       os.mkdir(outdir)
     end
+    target:set('policy', 'build.across_targets_in_parallel', false)
     target:add('deps', 'luaexe')
     target:add("includedirs", target:autogendir())
   end)
