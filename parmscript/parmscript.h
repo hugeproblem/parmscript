@@ -13,31 +13,34 @@
 #include <variant>
 #include <vector>
 
+typedef struct lua_State lua_State;
+
+namespace parmscript {
+
 class Parm;
 class ParmSet;
 using ParmPtr = std::shared_ptr<Parm>;
 using ConstParmPtr = std::shared_ptr<const Parm>;
 using ParmSetPtr = std::shared_ptr<ParmSet>;
-
-typedef struct lua_State lua_State;
+using string=std::string;
+template <class K, class V>
+using hashmap=std::unordered_map<K,V>;
+template <class T>
+using hashset=std::unordered_set<T>;
 
 class Parm
 {
 public:
+  struct int2   { int x,y; };
   struct float2 { float x,y; };
   struct float3 { float x,y,z; };
   struct float4 { float x,y,z,w; };
   struct color  { float r,g,b,a; };
-  using  string=std::string;
-  template <class K, class V>
-  using  hashmap=std::unordered_map<K,V>;
-  template <class T>
-  using  hashset=std::unordered_set<T>;
 
   enum class value_type_enum : size_t {
-    NONE,           BOOL, INT, FLOAT, DOUBLE, FLOAT2, FLOAT3, FLOAT4, COLOR, STRING};
+    NONE,           BOOL, INT, INT2, FLOAT, DOUBLE, FLOAT2, FLOAT3, FLOAT4, COLOR, STRING};
   using value_type = std::variant<
-    std::monostate, bool, int, float, double, float2, float3, float4, color, string>;
+    std::monostate, bool, int, int2, float, double, float2, float3, float4, color, string>;
   enum class ui_type_enum {
     FIELD, LABEL, BUTTON, SPACER, SEPARATOR, MENU, GROUP, STRUCT, LIST};
 
@@ -81,19 +84,6 @@ protected:
     return s;
   }
 
-  template <class T>
-  T getMeta(std::string const& key, T const& defaultval)
-  {
-    if(auto itr=meta_.find(key); itr!=meta_.end()) {
-      if (std::holds_alternative<T>(itr->second)) {
-        return std::get<T>(itr->second);
-      } else {
-        fprintf(stderr, "bad type held in %s: %d\n", key.c_str(), itr->second.index());
-      }
-    }
-    return defaultval;
-  }
-
 public:
   Parm(ParmSet* root):root_(root){}
   Parm(Parm&&)=default;
@@ -127,11 +117,18 @@ public:
   auto const& defaultValue() const { return default_; }
   auto const  type() const { return expected_value_type_; }
   auto const  ui() const { return ui_type_; }
+  auto*       root() const { return root_; }
+  auto const& menuLabels() const { return menu_labels_; }
 
   // retrieve value:
   template <class T>
-  std::enable_if_t<!std::is_same_v<T, int> && !std::is_same_v<T, string>, T>
+  constexpr std::enable_if_t<!std::is_same_v<T, int> && !std::is_same_v<T, string>, T>
   as() const { return std::get<T>(value_); }
+
+  // get pointer:
+  template <class T>
+  constexpr auto
+  getPtr() noexcept { return std::get_if<T>(&value_); }
 
   // special case for menu:
   template <class T>
@@ -142,7 +139,7 @@ public:
       if (menu_values_.size() == menu_items_.size() && idx>=0 && idx<menu_values_.size()) {
         return menu_values_[idx];
       } else {
-        return -1;
+        return idx;
       }
     } else {
       return std::get<int>(value_);
@@ -185,12 +182,16 @@ public:
       return fields_[i];
     return nullptr;
   }
+  auto&   allFields() { return fields_; }
 
   ParmPtr getField(string const& relpath);
 
   // retrieve list item:
   auto numListValues() const {
     return listValues_.size();
+  }
+  ParmPtr getListStruct(size_t i) const {
+    return listValues_[i];
   }
   template <class T>
   bool getListValue(size_t i, size_t f, T& ret) {
@@ -222,18 +223,33 @@ public:
     return false;
   } 
 
-  ParmPtr at(size_t idx) {
+  ParmPtr at(size_t idx) const {
     if (ui_type_ != ui_type_enum::LIST)
       throw std::domain_error("index into none-list parm");
     if (idx>=listValues_.size())
       throw std::out_of_range("index out of range");
-    return listValues_[idx];
+    return listValues_.at(idx);
   }
 
   // set values:
   template <class T>
   bool set(T value) {
-    if (auto* ptr = std::get_if<T>(&value_)) {
+    if constexpr (std::is_same_v<T, int>) {
+      if (ui_type_ == ui_type_enum::MENU) {
+        if (menu_values_.size() == menu_items_.size()) {
+          auto itr = std::find(menu_values_.begin(), menu_values_.end(), value);
+          if (itr == menu_values_.end())
+            value_ = 0;
+          else
+            value_ = int(itr - menu_values_.begin());
+        } else {
+          value_ = value;
+        }
+      } else {
+        value_ = value;
+      }
+    } else if (auto* ptr = std::get_if<T>(&value_)) {
+      root_->dirtyEntries_.insert(path());
       *ptr = std::move(value);
       return true;
     }
@@ -241,31 +257,43 @@ public:
   }
 
   // set list:
-  void resizeList(size_t cnt) {
-    if (auto oldsize=listValues_.size(); oldsize<cnt) {
-      for (auto i=oldsize; i<cnt; ++i) {
-        auto newItem = std::make_shared<Parm>(root_);
-        string indexstr = "["+std::to_string(i)+"]";
-        newItem->setUI(ui_type_enum::STRUCT);
-        newItem->setPath(path_+indexstr);
-        listValues_.push_back(newItem);
-        for (auto f: fields_) {
-          auto newField = std::make_shared<Parm>(*f);
-          newField->setPath(newItem->path()+"."+f->name());
-          newField->setLabel(newField->label()+indexstr);
-          newItem->fields_.push_back(newField);
-        }
-      }
-    } else {
-      listValues_.resize(cnt);
-    }
-  }
+  void resizeList(size_t cnt);
+
   template <class T>
   bool setListValue(size_t i, size_t f, T value) {
+    root_->dirtyEntries_.insert(path());
     return listValues_.at(i)->fields_.at(f)->set(std::move(value));
   }
 
-  bool updateInspector(hashset<string>& dirty, lua_State* L = nullptr);
+  template <class T>
+  T getMeta(std::string const& key, T const& defaultval) const
+  {
+    if(auto itr=meta_.find(key); itr!=meta_.end()) {
+      if (std::holds_alternative<T>(itr->second)) {
+        return std::get<T>(itr->second);
+      } else {
+        fprintf(stderr, "bad type held in %s: %z\n", key.c_str(), itr->second.index());
+      }
+    }
+    return defaultval;
+  }
+
+  bool hasMeta(std::string const& key) const
+  {
+    return meta_.find(key) != meta_.end();
+  }
+
+  template <class T>
+  bool tryGetMeta(std::string const& key, T* retValue)
+  {
+    if(auto itr=meta_.find(key); itr!=meta_.end()) {
+      if (std::holds_alternative<T>(itr->second)) {
+        *retValue = std::get<T>(itr->second);
+        return true;
+      }
+    }
+    return false;
+  }
 
 protected:
   friend class ParmSet;
@@ -331,21 +359,19 @@ protected:
   */
 };
 
+class LoadError : public std::runtime_error
+{
+public:
+  using std::runtime_error::runtime_error;
+};
 
 class ParmSet
 {
-public:
-  using string=std::string;
-  template <class K, class V>
-  using hashmap=std::unordered_map<K,V>;
-  template <class T>
-  using hashset=std::unordered_set<T>;
-
 protected:
-  ParmPtr                  root_;
-  std::vector<ParmPtr>     parms_;
-  hashset<string>          dirty_;
-  bool                     loaded_ = false;
+  ParmPtr              root_;
+  std::vector<ParmPtr> parms_;
+  bool                 loaded_ = false;
+  hashset<string>      dirtyEntries_;
 
   static lua_State *defaultLuaRuntime(); // shared lua runtime for parmscript parsing and `disablewhen` expression evaluation
 
@@ -354,6 +380,7 @@ protected:
   static int evalParm(lua_State* lua);
 
   friend class Parm;
+  friend class ParmSetInspector;
 
 public:
   /// enable lua to call ParmSet functions
@@ -367,11 +394,10 @@ public:
   /// ```
   static void exposeToLua(lua_State* lua);
 
-  bool loadScript(string const& s, lua_State* runtime=nullptr); // if no lua runtime was given, default shared lua runtime will be used
-  bool updateInspector(lua_State* runtime=nullptr);
+  static string& preloadScript();
 
-  auto const& dirtyEntries() const { return dirty_; }
-  bool transferTo(ParmSet& that); // convert this into that, try best to respect other's existing type & format
+  void loadScript(std::string_view script, lua_State* runtime=nullptr); // if no lua runtime was given, default shared lua runtime will be used
+
   bool loaded() const { return loaded_; }
 
   ParmPtr get(string const& key) {
@@ -379,9 +405,15 @@ public:
     return root_->getField(key);
   }
   ConstParmPtr const get(string const& key) const {
+    if (key == "") return root_;
     return std::const_pointer_cast<const Parm>(root_->getField(key));
   }
+  auto const& dirtyEntries() const { return dirtyEntries_; }
+  void clearDirtyEntries() { dirtyEntries_.clear(); }
+
   auto operator[](string const& key) { return get(key); }
   auto operator[](string const& key) const { return get(key); }
 };
+
+} // namespace parmscript
 

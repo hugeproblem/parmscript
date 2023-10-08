@@ -159,6 +159,7 @@ local loadParmScript=function(parmscript)
     spacer=defineNonField('spacer'),
     toggle=defineField('bool', 'toggle'),
     int=defineField('int'),
+    int2=defineField('int2'),
     float=defineField('float'),
     float2=defineField('float2'),
     float3=defineField('float3'),
@@ -175,6 +176,26 @@ local loadParmScript=function(parmscript)
     endstruct=leave,
     list=function(name) return enter(name, 'list') end,
     endlist=leave,
+    pairs=pairs,
+    ipairs=ipairs,
+    alias=function(underlaying, inspector_tag, initial_meta)
+      return function(name)
+        local meta = {inspector=inspector_tag}
+        if initial_meta then
+          for i,v in pairs(initial_meta) do
+            meta[i] = v
+          end
+        end
+        local metasetter = underlaying(name)
+        metasetter(meta)
+        return function(moremeta)
+          for i,v in pairs(moremeta) do
+            meta[i] = v
+          end
+          metasetter(meta)
+        end
+      end
+    end,
   }
   local parm=function(name)
     return parmlut[name]
@@ -587,8 +608,7 @@ local loadParmScript=function(parmscript)
 
   local f, msg=load(parmscript,'parmscript','t',safeenv)
   if not f then
-    print(msg)
-    return nil, msg
+    return error(msg)
   end
   local result
   result, msg = pcall(f)
@@ -608,8 +628,8 @@ local loadParmScript=function(parmscript)
       imguiInspector=genImGuiInspector,
     }
   else
-    print(msg)
-    return nil
+    return error(msg)
+    --return nil
   end
 end
 

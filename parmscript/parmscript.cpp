@@ -1,9 +1,6 @@
 #include "parmscript.h"
 
 #include <array>
-#include <imgui.h>
-#include <imgui_stdlib.h>
-
 #include <memory>
 
 extern "C" {
@@ -19,6 +16,7 @@ static const char parmexpr_src[] = {
 };
 
 #ifdef DEBUG
+#include <stdio.h>
 #define WARN(...) fprintf(stderr, __VA_ARGS__)
 #define INFO(...) fprintf(stdout, __VA_ARGS__)
 #else
@@ -26,256 +24,9 @@ static const char parmexpr_src[] = {
 #define INFO(...) /*nothing*/
 #endif
 
-bool Parm::updateInspector(Parm::hashset<Parm::string>& modified, lua_State* L)
-{
-  bool imdirty = false;
-  bool displayChildren = true;
+namespace parmscript {
 
-  string disablewhen = getMeta<string>("disablewhen", "");
-  if (!disablewhen.empty()) {
-    // expand {path.to.parm} to its value
-    // expand {menu:path.to.parm::item} to its value
-    // expand {length:path.to.parm} to its value
-    // translate != into ~=, || into or, && into and, ! into not
-    // evaluate disablewhen expr in Lua
-
-    // init the eval function:
-    bool disabled = false;
-
-    if (L==nullptr)
-      L = root_->defaultLuaRuntime();
-    sol::state_view lua{L};
-    auto loaded = lua.load(R"LUA(
-local ps, evalParm, expr=...
-return expr:gsub('{([^}]+)}', function(expr)
-  local e = evalParm(ps, expr)
-  if e~=nil then
-    return string.format("%q", e)
-  else
-    return '{error}'
-  end
-end):gsub('!=', '~='):gsub('||', ' or '):gsub('&&', ' and '):gsub('!', 'not ')
-    )LUA");
-    if (loaded.valid()) {
-      string expanded = loaded.call(root_, ParmSet::evalParm, disablewhen);
-      // INFO("disablewhen \"%s\" expanded to \"%s\"\n", disablewhen.c_str(), expanded.c_str());
-      if (expanded.find("{error}") == string::npos) {
-        loaded = lua.load("return "+expanded, "disablewhen", sol::load_mode::text);
-        if (loaded.valid()) {
-          disabled = loaded.call();
-        }
-      }
-    } else {
-      WARN("failed to load disablewhen script");
-    }
-
-    ImGui::BeginDisabled(disabled);
-  }
-
-  if (ui_type_ == ui_type_enum::GROUP) {
-    if (!ImGui::CollapsingHeader(label_.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
-      displayChildren = false;
-    }
-  } else if (ui_type_ == ui_type_enum::STRUCT) {
-    if (!ImGui::TreeNodeEx(label_.c_str(), ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_DefaultOpen)) {
-      displayChildren = false;
-    }
-  } else if (ui_type_ == ui_type_enum::LIST) {
-    displayChildren = false;
-    int numitems = listValues_.size();
-    if (ImGui::InputInt(("# "+label_).c_str(), &numitems)) {
-      resizeList(numitems);
-      modified.insert(path_);
-      imdirty = true;
-    }
-    for (int i=0; i<numitems; ++i) {
-      for (auto field: listValues_[i]->fields_) {
-        imdirty |= field->updateInspector(modified);
-      }
-      if (i+1<numitems) {
-        ImGui::Separator();
-      }
-    }
-  } else if (ui_type_ == ui_type_enum::LABEL) {
-    ImGui::TextUnformatted(label_.c_str());
-  } else if (ui_type_ == ui_type_enum::BUTTON) {
-    if (ImGui::Button(label_.c_str())) {
-      modified.insert(path_);
-      // TODO: callback
-    }
-  } else if (ui_type_ == ui_type_enum::SPACER) {
-    ImGui::Spacing();
-  } else if (ui_type_ == ui_type_enum::SEPARATOR) {
-    ImGui::Separator();
-  } else if (ui_type_ == ui_type_enum::FIELD) {
-    switch(expected_value_type_) {
-    case value_type_enum::BOOL:
-    {
-      bool v = std::get<bool>(value_);
-      if (ImGui::Checkbox(label_.c_str(), &v)) {
-        value_ = v;
-        imdirty = true;
-      }
-      break;
-    }
-    case value_type_enum::INT:
-    {
-      int v = std::get<int>(value_);
-      string ui = getMeta<string>("ui", "drag");
-      int min = getMeta<int>("min", 0);
-      int max = getMeta<int>("max", 100);
-      int speed = getMeta<int>("speed", 1);
-      if (ui == "drag") {
-        imdirty = ImGui::DragInt(label_.c_str(), &v, speed);
-      } else if (ui == "slider") {
-        imdirty = ImGui::SliderInt(label_.c_str(), &v, min, max);
-      } else {
-        imdirty = ImGui::InputInt(label_.c_str(), &v);
-      }
-      if (imdirty)
-        value_ = v;
-      break;
-    }
-    case value_type_enum::FLOAT:
-    {
-      float v = std::get<float>(value_);
-      string ui = getMeta<string>("ui", "drag");
-      float min = getMeta<float>("min", 0.f);
-      float max = getMeta<float>("max", 1.f);
-      float speed = getMeta<float>("speed", 1.f);
-      if (ui == "drag") {
-        imdirty = ImGui::DragFloat(label_.c_str(), &v, speed);
-      } else if (ui == "slider") {
-        imdirty = ImGui::SliderFloat(label_.c_str(), &v, min, max);
-      } else {
-        imdirty = ImGui::InputFloat(label_.c_str(), &v);
-      }
-      if (imdirty)
-        value_ = v;
-      break;
-    }
-#define HANDLE_FLOAT_N(N) \
-    case value_type_enum::FLOAT##N:                                     \
-    {                                                                   \
-      float##N v = std::get<float##N>(value_);                          \
-      string ui = getMeta<string>("ui", "drag");                        \
-      float min = getMeta<float>("min", 0.f);                           \
-      float max = getMeta<float>("max", 1.f);                           \
-      float speed = getMeta<float>("speed", 1.f);                       \
-      if (ui == "drag") {                                               \
-        imdirty = ImGui::DragFloat##N(label_.c_str(), &v.x, speed);     \
-      } else if (ui == "slider") {                                      \
-        imdirty = ImGui::SliderFloat##N(label_.c_str(), &v.x, min, max);\
-      } else {                                                          \
-        imdirty = ImGui::InputFloat##N(label_.c_str(), &v.x);           \
-      }                                                                 \
-      if (imdirty)                                                      \
-        value_ = v;                                                     \
-      break;                                                            \
-    }
-    HANDLE_FLOAT_N(2)
-    HANDLE_FLOAT_N(3)
-    HANDLE_FLOAT_N(4)
-#undef HANDLE_FLOAT_N
-    case value_type_enum::DOUBLE:
-    {
-      double v = std::get<double>(value_);
-      float speed = getMeta<double>("speed", 1.0);
-      imdirty = ImGui::InputDouble(label_.c_str(), &v, speed);
-      if (imdirty)
-        value_ = v;
-      break;
-    }
-    case value_type_enum::STRING:
-    {
-      string *v = std::get_if<string>(&value_);
-      if (!v)
-        break;
-      bool multiline = getMeta<bool>("multiline", false);
-      if (multiline)
-        imdirty = ImGui::InputTextMultiline(label_.c_str(), v);
-      else
-        imdirty = ImGui::InputText(label_.c_str(), v);
-      break;
-    }
-    case value_type_enum::COLOR:
-    {
-      color v = std::get<color>(value_);
-      bool alpha = getMeta<bool>("alpha", false);
-      bool hsv = getMeta<bool>("hsv", false);
-      bool hdr = getMeta<bool>("hdr", false);
-      bool wheel = getMeta<bool>("wheel", false);
-      bool picker = getMeta<bool>("picker", false);
-
-      uint32_t flags = 0;
-      if (alpha)
-        flags |= ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_AlphaPreviewHalf;
-      else
-        flags |= ImGuiColorEditFlags_NoAlpha;
-
-      if (hsv)
-        flags |= ImGuiColorEditFlags_DisplayHSV;
-      else
-        flags |= ImGuiColorEditFlags_DisplayRGB;
-
-      if (hdr)
-        flags |= ImGuiColorEditFlags_Float;
-      else
-        flags |= ImGuiColorEditFlags_Uint8;
-
-      if (wheel)
-        flags |= ImGuiColorEditFlags_PickerHueWheel;
-
-      if (alpha) {
-        if (picker)
-          imdirty = ImGui::ColorPicker4(label_.c_str(), &v.r, flags);
-        else
-          imdirty = ImGui::ColorEdit4(label_.c_str(), &v.r, flags);
-      } else {
-        if (picker)
-          imdirty = ImGui::ColorPicker3(label_.c_str(), &v.r, flags);
-        else
-          imdirty = ImGui::ColorEdit3(label_.c_str(), &v.r, flags);
-      }
-      if (imdirty)
-        value_ = v;
-      break;
-    }
-    default:
-      INFO("unknown field %s of type %d\n", name_.c_str(), static_cast<int>(expected_value_type_));
-      break;
-    }
-  } else if (ui_type_ == ui_type_enum::MENU) {
-    std::vector<char const*> labels;
-    labels.reserve(menu_labels_.size());
-    for (auto const& label: menu_labels_) {
-      labels.push_back(label.c_str());
-    }
-    if (ImGui::Combo(label_.c_str(), std::get_if<int>(&value_), labels.data(), labels.size()))
-      imdirty = true;
-  } else {
-    INFO("unknown ui %s of type %d\n", name_.c_str(), static_cast<int>(ui_type_));
-  }
-
-  if (displayChildren && !fields_.empty()) {
-    for (auto child: fields_)
-      imdirty |= child->updateInspector(modified);
-  }
-  if (ui_type_==ui_type_enum::STRUCT && displayChildren) {
-    ImGui::TreePop();
-  }
-
-  if (!disablewhen.empty()) {
-    ImGui::EndDisabled();
-  }
-  if (imdirty)
-    modified.insert(path_);
-  if (getMeta<bool>("joinnext", false))
-    ImGui::SameLine();
-  return imdirty;
-} 
-
-ParmPtr Parm::getField(Parm::string const& relpath) {
+ParmPtr Parm::getField(string const& relpath) {
   if (auto dot=relpath.find('.'); dot!=string::npos) {
     if (auto f=getField(relpath.substr(0, dot)))
       return f->getField(relpath.substr(dot+1));
@@ -315,6 +66,35 @@ ParmPtr Parm::getField(Parm::string const& relpath) {
   return nullptr;
 }
 
+void Parm::resizeList(size_t cnt)
+{
+  root_->dirtyEntries_.insert(path());
+  if (auto oldsize=listValues_.size(); oldsize<cnt) {
+    for (auto i=oldsize; i<cnt; ++i) {
+      auto newItem = std::make_shared<Parm>(root_);
+      string indexstr = "["+std::to_string(i)+"]";
+      newItem->setUI(ui_type_enum::STRUCT);
+      newItem->setPath(path_+indexstr);
+      listValues_.push_back(newItem);
+      for (auto f: fields_) {
+        auto newField = std::make_shared<Parm>(*f);
+        newField->setPath(newItem->path()+"."+f->name());
+        newField->setLabel(newField->label()+indexstr);
+        newItem->fields_.push_back(newField);
+      }
+    }
+  } else {
+    listValues_.resize(cnt);
+  }
+}
+
+//////////////////////// ParmSet /////////////////////////////
+
+string& ParmSet::preloadScript()
+{
+  static string script_;
+  return script_;
+}
 
 int ParmSet::processLuaParm(lua_State* lua)
 {
@@ -330,7 +110,7 @@ int ParmSet::processLuaParm(lua_State* lua)
   string path = field["path"];
   string name = field["name"];
   string type = field["type"];
-  auto   meta = field["meta"];
+  sol::table meta = field["meta"];
   string label = meta["label"].get_or(Parm::titleize(name));
   auto  defaultfield = meta["default"];
   Parm::value_type defaultval;
@@ -364,6 +144,11 @@ int ParmSet::processLuaParm(lua_State* lua)
     if (meta[key].valid())
       newparm->setMeta<bool>(key, meta[key].get<bool>());
   };
+  auto strmeta = [&meta, &newparm](string const& key) {
+    if (meta[key].valid())
+      newparm->setMeta<string>(key, meta[key].get<string>());
+  };
+
   INFO("1 ");
 
   Parm::value_type_enum valuetype = Parm::value_type_enum::NONE;
@@ -373,6 +158,11 @@ int ParmSet::processLuaParm(lua_State* lua)
   } else if (type=="int") {
     valuetype = Parm::value_type_enum::INT;
     defaultval = defaultfield.get_or(0);
+    parseminmax(0);
+  } else if (type=="int2") {
+    valuetype = Parm::value_type_enum::INT2;
+    auto vals = defaultfield.get_or(std::array<int, 2>{0,0});
+    defaultval = Parm::int2{vals[0], vals[1]};
     parseminmax(0);
   } else if (type=="float") {
     valuetype = Parm::value_type_enum::FLOAT;
@@ -410,11 +200,29 @@ int ParmSet::processLuaParm(lua_State* lua)
     valuetype = Parm::value_type_enum::DOUBLE;
     defaultval.emplace<double>(defaultfield.get_or(0.0));
   }
-  if (meta["ui"].valid())
-    newparm->setMeta<string>("ui", meta["ui"].get<string>());
-  if (meta["disablewhen"].valid())
-    newparm->setMeta<string>("disablewhen", meta["disablewhen"].get<string>());
   boolmeta("joinnext");
+  if (meta["width"].valid())
+    newparm->setMeta<int>("width", meta["width"].get<int>());
+  strmeta("ui");
+  strmeta("disablewhen");
+  strmeta("font");
+  // any other none-predefined meta:
+  meta.for_each([&newparm](sol::object key, sol::object val) {
+    auto strkey = key.as<string>();
+    if (newparm->hasMeta(strkey))
+      return;
+    switch (val.get_type())
+    {
+    case sol::type::string:
+      newparm->setMeta<string>(strkey, val.as<string>()); break;
+    case sol::type::boolean:
+      newparm->setMeta<bool>(strkey, val.as<bool>()); break;
+    case sol::type::number:
+      newparm->setMeta<double>(strkey, val.as<double>()); break;
+    default:
+      break;
+    }
+  });
   INFO("2 ");
   newparm->setup(name, path, label, uitype, valuetype, defaultval);
 
@@ -554,31 +362,37 @@ int ParmSet::evalParm(lua_State* L)
   return 0;
 }
 
-bool ParmSet::loadScript(std::string const& s, lua_State* L)
+void ParmSet::loadScript(std::string_view sv, lua_State* L)
 {
   loaded_ = false;
   if (L == nullptr)
     L = defaultLuaRuntime();
+  int luasp = lua_gettop(L); // stack pointer
   if (LUA_OK != luaL_loadbufferx(L, parmexpr_src, sizeof(parmexpr_src)-1, "parmexpr", "t")) {
-    WARN("failed to load parmexpr\n");
-    return false;
+    throw LoadError("failed to load parmexpr\n");
+    return;
   }
   if (LUA_OK != lua_pcall(L, 0, 1, 0)) {
-    WARN("failed to call parmexpr\n");
-    return false;
+    lua_settop(L, luasp);
+    throw LoadError("failed to call parmexpr\n");
+    return;
   }
-  lua_pushlstring(L, s.c_str(), s.size());
+  auto fullscript = preloadScript();
+  fullscript += "\n";
+  fullscript += sv;
+  lua_pushlstring(L, fullscript.data(), fullscript.size());
   if (LUA_OK != lua_pcall(L, 1, 1, 0)) {
-    WARN("failed to parse parmscript, error: %s\n", luaL_optstring(L, -1, "unknown"));
-    return false;
+    std::string message = luaL_optstring(L, -1, "unknown");
+    lua_settop(L, luasp);
+    throw LoadError(message);
+    return;
   }
   root_  = std::make_shared<Parm>(nullptr);
   root_->setUI(Parm::ui_type_enum::STRUCT);
   parms_ = {root_};
 
   sol::state_view lua{L};
-  try {
-    auto loaded = lua.load(R"LUA(
+  auto loaded = lua.load(R"LUA(
 local parmscript, cpp, process = ...
 local function dofield(cpp, parentid, field)
   local id = process(cpp, parentid, field)
@@ -592,37 +406,25 @@ end
 for _,v in pairs(parmscript.root.fields) do
   dofield(cpp, 0, v)
 end
-    )LUA");
-    if (loaded.valid()) {
-      lua_pushvalue(L, -2); // return value of last `pcall` left on stack, which is the parmscript object
-      sol::stack::push(L, this);
-      lua_pushcfunction(L, processLuaParm);
-      if (LUA_OK != lua_pcall(L, 3, 0, 0)) {
-        WARN("failed to feed parsed parmscript into C++\n");
-      } else {
-        // done. pop the parmscript object from stack
-        lua_pop(L, 1);
-      }
+  )LUA");
+  if (loaded.valid()) {
+    lua_pushvalue(L, -2); // return value of last `pcall` left on stack, which is the parmscript object
+    sol::stack::push(L, this);
+    lua_pushcfunction(L, processLuaParm);
+    if (LUA_OK != lua_pcall(L, 3, 0, 0)) {
+      std::string message = luaL_optstring(L, -1, "unknown");
+      lua_settop(L, luasp);
+      throw LoadError(message);
+      return;
     } else {
-      WARN("failed to load finalizing script\n");
+      // done. pop the parmscript object from stack
+      loaded_ = true;
+      lua_pop(L, 1);
     }
-  } catch(std::exception const& e) {
-    WARN("exception: %s\n", e.what());
+  } else {
+    throw LoadError("failed to load finalizing script\n");
   }
   loaded_ = true;
-  return true;
-}
-
-bool ParmSet::updateInspector(lua_State* L)
-{
-  if (L == nullptr)
-    L = defaultLuaRuntime();
-  dirty_.clear();
-  //root_->updateInspector(dirty_, L);
-  //dirty_.erase(""); // no need to explicitly mark root dirty
-  for (auto child: root_->fields_)
-    child->updateInspector(dirty_);
-  return !dirty_.empty();
 }
 
 void ParmSet::exposeToLua(lua_State *L)
@@ -639,36 +441,40 @@ void ParmSet::exposeToLua(lua_State *L)
       if (lua_gettop(L)>2) {
         WARN("extra arguments passed to ParmSet:loadScript are discarded\n");
       }
-      sol::stack::push(L, optself.value()->loadScript(optsrc.value(), L));
-      return 1;
+      try {
+        optself.value()->loadScript(optsrc.value(), L);
+      } catch (std::exception const& e) {
+        return luaL_error(L, "failed to load: %s", e.what());
+      }
+      return 0;
     });
-    ut.set("updateInspector", [](lua_State *L)->int{
-      auto optself = sol::stack::check_get<ParmSet*>(L, 1);
-      if (!optself.has_value()) {
-        return luaL_error(L, "wrong arguments passed to ParmSet:loadScript, expected (ParmSet)");
-      }
-      if (lua_gettop(L)>1) {
-        WARN("extra arguments passed to ParmSet:updateInspector are discarded\n");
-      }
-      sol::stack::push(L, optself.value()->updateInspector(L));
-      return 1;
-    });
-    ut.set("dirtyEntries", [](lua_State *L)->int{
-      auto optself = sol::stack::check_get<ParmSet*>(L, 1);
-      if (!optself.has_value()) {
-        return luaL_error(L, "wrong arguments passed to ParmSet:dirtyEntries, expected (ParmSet)");
-      }
-      auto const& dirty = optself.value()->dirtyEntries();
-      if (dirty.empty())
-        return 0;
-      lua_createtable(L, dirty.size(), 0);
-      lua_Integer i = 1;
-      for (auto& s: dirty) {
-        lua_pushlstring(L, s.c_str(), s.size());
-        lua_seti(L, -2, i++);
-      }
-      return 1;
-    });
+    //ut.set("updateInspector", [](lua_State *L)->int{
+    //  auto optself = sol::stack::check_get<ParmSet*>(L, 1);
+    //  if (!optself.has_value()) {
+    //    return luaL_error(L, "wrong arguments passed to ParmSet:loadScript, expected (ParmSet)");
+    //  }
+    //  if (lua_gettop(L)>1) {
+    //    WARN("extra arguments passed to ParmSet:updateInspector are discarded\n");
+    //  }
+    //  sol::stack::push(L, optself.value()->updateInspector(L));
+    //  return 1;
+    //});
+    //ut.set("dirtyEntries", [](lua_State *L)->int{
+    //  auto optself = sol::stack::check_get<ParmSet*>(L, 1);
+    //  if (!optself.has_value()) {
+    //    return luaL_error(L, "wrong arguments passed to ParmSet:dirtyEntries, expected (ParmSet)");
+    //  }
+    //  auto const& dirty = optself.value()->dirtyEntries();
+    //  if (dirty.empty())
+    //    return 0;
+    //  lua_createtable(L, dirty.size(), 0);
+    //  lua_Integer i = 1;
+    //  for (auto& s: dirty) {
+    //    lua_pushlstring(L, s.c_str(), s.size());
+    //    lua_seti(L, -2, i++);
+    //  }
+    //  return 1;
+    //});
     ut.set(sol::meta_function::index, evalParm);
     sol::stack::push(L, ut);
     return 1;
@@ -698,3 +504,6 @@ lua_State* ParmSet::defaultLuaRuntime()
   static LuaRAII instance;
   return instance.lua();
 }
+
+} // namespace parmscript
+
